@@ -98,33 +98,43 @@ export function StreamingAnswer({
   onSettled: () => void;
 }) {
   const shown = useSmoothText(text, final, onSettled);
-  // Follow the growing answer until the reader scrolls up; resume if they return to the bottom.
+  // Keep the caret visible above the composer while writing. Scrolling up pauses following;
+  // scrolling back down to where the caret is visible resumes it.
+  const caretRef = useRef<HTMLSpanElement>(null);
   const follow = useRef(true);
   useEffect(() => {
-    const el = document.scrollingElement;
-    if (!el) return;
-    const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+    let touchY = 0;
+    const caretVisible = () => {
+      const r = caretRef.current?.getBoundingClientRect();
+      return !!r && r.top >= 0 && r.bottom <= window.innerHeight;
+    };
     const onWheel = (e: WheelEvent) => {
       if (e.deltaY < 0) follow.current = false;
+      else if (caretVisible()) follow.current = true;
     };
-    const onTouch = () => {
-      follow.current = false;
+    const onTouchStart = (e: TouchEvent) => {
+      touchY = e.touches[0]?.clientY ?? 0;
     };
-    const onScroll = () => {
-      if (nearBottom()) follow.current = true;
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0]?.clientY ?? 0;
+      if (y > touchY) follow.current = false;
+      else if (caretVisible()) follow.current = true;
+      touchY = y;
     };
     window.addEventListener("wheel", onWheel, { passive: true });
-    window.addEventListener("touchmove", onTouch, { passive: true });
-    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
     return () => {
       window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("touchmove", onTouch);
-      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
     };
   }, []);
   useEffect(() => {
-    const el = document.scrollingElement;
-    if (follow.current && el) window.scrollTo(0, el.scrollHeight);
+    const r = caretRef.current?.getBoundingClientRect();
+    if (!follow.current || !r) return;
+    const limit = window.innerHeight - 190; // space for the fixed composer
+    if (r.bottom > limit) window.scrollBy(0, r.bottom - limit);
   }, [shown.length]);
   const label =
     stage === "retrieval"
@@ -136,7 +146,7 @@ export function StreamingAnswer({
     <div>
       {shown && (
         <div className="prose-answer text-[17px] leading-[1.75] text-stone-800">
-          {renderWithCites(shown, citations, null, () => {}, <span className="caret" aria-hidden />)}
+          {renderWithCites(shown, citations, null, () => {}, <span ref={caretRef} className="caret" aria-hidden />)}
         </div>
       )}
       <div className={`flex items-center gap-3 text-sm text-stone-400 ${shown ? "mt-4" : ""}`}>
