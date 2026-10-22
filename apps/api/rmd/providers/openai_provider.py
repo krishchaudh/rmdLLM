@@ -20,7 +20,7 @@ OCR_PROMPT = (
 
 def _client() -> OpenAI:
     s = get_settings()
-    return OpenAI(api_key=s.openai_api_key or None, timeout=120, max_retries=0)
+    return OpenAI(api_key=s.openai_api_key or None, timeout=60, max_retries=0)
 
 
 _retry = retry(

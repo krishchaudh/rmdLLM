@@ -10,7 +10,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from rmd.api import health
+from rmd.api import admin, auth, health, sources
 from rmd.config import get_settings
 from rmd.logging import configure_logging, get_logger
 
@@ -65,3 +65,6 @@ async def validation_error(_: Request, exc: RequestValidationError):
 
 
 app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(sources.router)
+app.include_router(admin.router)
