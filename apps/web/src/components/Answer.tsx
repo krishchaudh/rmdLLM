@@ -14,7 +14,7 @@ export function renderWithCites(
   tail?: React.ReactNode,
 ) {
   const valid = new Set(cites.map((c) => c.n));
-  const paras = text.split(/\n{2,}/);
+  const paras = text.replace(/\*\*/g, "").split(/\n{2,}/);
   return paras.map((para, pi) => {
     const parts: React.ReactNode[] = [];
     let last = 0;
