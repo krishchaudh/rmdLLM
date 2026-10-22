@@ -5,7 +5,8 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        sans: ["var(--font-sans)", "var(--font-devanagari)", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif)", "var(--font-devanagari)", "Georgia", "serif"],
         devanagari: ["var(--font-devanagari)", "Noto Sans Devanagari", "sans-serif"],
       },
       colors: {

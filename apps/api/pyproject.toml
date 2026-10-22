@@ -27,6 +27,8 @@ dependencies = [
     "slowapi>=0.1.9,<1",
     "orjson>=3.10,<4",
     "numpy>=1.26,<3",
+    "opencv-python-headless>=4.9,<5",
+    "tiktoken>=0.7,<1",
 ]
 
 [project.optional-dependencies]

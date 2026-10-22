@@ -6,11 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
-from rmd.api import health
+from rmd.api import admin, auth, chat, health, sources
 from rmd.config import get_settings
 from rmd.logging import configure_logging, get_logger
 
@@ -18,7 +17,7 @@ settings = get_settings()
 configure_logging(settings.log_level, json_output=settings.is_production)
 log = get_logger("rmd.api")
 
-limiter = Limiter(key_func=get_remote_address)
+from rmd.limiter import limiter  # noqa: E402
 
 app = FastAPI(
     title="RMD LLM V2 API",
@@ -65,3 +64,7 @@ async def validation_error(_: Request, exc: RequestValidationError):
 
 
 app.include_router(health.router)
+app.include_router(auth.router)
+app.include_router(sources.router)
+app.include_router(admin.router)
+app.include_router(chat.router)

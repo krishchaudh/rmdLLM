@@ -1,0 +1,40 @@
+# Render Blueprint — staging. Postgres lives on Supabase/Neon (pgvector), set DATABASE_URL in the dashboard.
+# Free plan has no persistent disk: the book PDF is re-downloaded on boot from BOOK_PDF_URL (see scripts/start.sh).
+services:
+  - type: web
+    name: rmd-api
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DATABASE_URL
+        sync: false # postgresql+psycopg://... (use the session-mode pooler, port 5432)
+      - key: REDIS_URL
+        fromService: { type: redis, name: rmd-redis, property: connectionString }
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: openai
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: '["https://rmd-web.vercel.app"]' # replace with the Vercel URL
+      - key: UPLOAD_DIR
+        value: /data/uploads
+      - key: BOOK_PDF_URL
+        value: https://github.com/krishchaudh/rmdLLM/releases/download/book-v1/prem-ras-siddhanta-english.pdf
+  - type: redis
+    name: rmd-redis
+    plan: free
+    ipAllowList: []
