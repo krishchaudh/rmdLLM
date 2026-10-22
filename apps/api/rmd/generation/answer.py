@@ -147,7 +147,11 @@ def answer_question(
     draft = gen.text.strip()
 
     if draft.upper().startswith("ABSTAIN"):
-        reason = draft.split("\n", 1)[1].strip() if "\n" in draft else ""
+        rest = draft.split("\n", 1)[1].strip() if "\n" in draft else ""
+        if _CITE_RE.search(rest):
+            draft = rest  # model abstained on one part but answered the rest with citations
+    if draft.upper().startswith("ABSTAIN"):
+        reason = _CITE_RE.sub("", rest.split("\n", 1)[0]).strip()[:300]
         return Answer(
             answer=_abstain_text(lang, reason),
             abstained=True,
