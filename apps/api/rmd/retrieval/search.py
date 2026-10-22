@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 
 from rmd.providers.base import Usage
 from rmd.providers.factory import get_embedding_provider
+from rmd.retrieval.language import detect_language
 from rmd.retrieval.terminology import expand_query_terms, fold
+from rmd.retrieval.translate import bridge_query
 
 
 @dataclass
@@ -27,6 +29,7 @@ class Hit:
     score: float
     dense_rank: int | None = None
     lexical_rank: int | None = None
+    rerank_rank: int | None = None
     youtube_id: str | None = None
 
 
@@ -37,6 +40,10 @@ class RetrievalResult:
     latency_ms: dict = field(default_factory=dict)
     usage: Usage = field(default_factory=Usage)
     expanded_terms: list[str] = field(default_factory=list)
+    translated_query: str | None = None
+    translation_usage: Usage = field(default_factory=Usage)
+    reranked: bool = False
+    rerank_usage: Usage = field(default_factory=Usage)
 
 
 _BASE_SELECT = """
@@ -158,16 +165,44 @@ def lexical_search(
 
 
 def rrf_fuse(dense: list[Hit], lexical: list[Hit], k: int, c: int = 60) -> list[Hit]:
+    return rrf_fuse_many([dense], [lexical], k, c)
+
+
+def rrf_fuse_many(
+    dense_lists: list[list[Hit]], lexical_lists: list[list[Hit]], k: int, c: int = 60
+) -> list[Hit]:
+    """Reciprocal-rank fusion over several ranked lists (e.g. original + translated query).
+
+    A chunk's dense_rank / lexical_rank is the best rank it achieved in any list of that kind.
+    """
     merged: dict[uuid.UUID, Hit] = {}
-    for rank, h in enumerate(dense, start=1):
-        m = merged.setdefault(h.chunk_id, Hit(**{**h.__dict__, "score": 0.0}))
-        m.dense_rank = rank
-        m.score += 1.0 / (c + rank)
-    for rank, h in enumerate(lexical, start=1):
-        m = merged.setdefault(h.chunk_id, Hit(**{**h.__dict__, "score": 0.0}))
-        m.lexical_rank = rank
-        m.score += 1.0 / (c + rank)
+    for kind, lists in (("dense", dense_lists), ("lexical", lexical_lists)):
+        for ranked in lists:
+            for rank, h in enumerate(ranked, start=1):
+                m = merged.setdefault(h.chunk_id, Hit(**{**h.__dict__, "score": 0.0}))
+                prev = getattr(m, f"{kind}_rank")
+                setattr(m, f"{kind}_rank", rank if prev is None else min(prev, rank))
+                m.score += 1.0 / (c + rank)
     return sorted(merged.values(), key=lambda h: h.score, reverse=True)[:k]
+
+
+def ensure_kind_diversity(hits: list[Hit], fused: list[Hit], k: int) -> list[Hit]:
+    """Guarantee each source kind's top fused hit survives reranking (if it was fused top-3).
+
+    The LLM reranker tends to prefer clean English prose over colloquial Hindi speech, so
+    without this the lecture can vanish from answers it is highly relevant to.
+    """
+    kept = {h.chunk_id for h in hits}
+    out = list(hits)
+    for kind in {h.kind for h in fused}:
+        best = next((h for h in fused[:3] if h.kind == kind), None)
+        if best is None or best.chunk_id in kept:
+            continue
+        if len(out) >= k:
+            out.pop()
+        out.append(best)
+        kept.add(best.chunk_id)
+    return out[:k]
 
 
 def retrieve(
@@ -176,33 +211,74 @@ def retrieve(
     *,
     k: int = 8,
     mode: str = "hybrid",  # dense | lexical | hybrid
-    candidate_k: int = 30,
+    candidate_k: int = 20,
     source_ids: list[uuid.UUID] | None = None,
     kinds: list[str] | None = None,
+    bridge_languages: bool = True,
+    rerank: bool | None = None,
 ) -> RetrievalResult:
+    """Hybrid retrieval with language bridging, per-source-kind pooling and optional reranking.
+
+    Candidates are gathered separately for each source kind (book / lecture) so that a large
+    English book cannot crowd out the much smaller Hindi lecture (or vice versa) before fusion.
+    """
+    from rmd.config import get_settings
+
+    settings = get_settings()
+    if rerank is None:
+        rerank = settings.rerank_enabled
     lat: dict[str, float] = {}
     usage = Usage()
-    expansions = expand_query_terms(query)
-    dense: list[Hit] = []
-    lexical: list[Hit] = []
+    translation_usage = Usage()
+    translated: str | None = None
+    if bridge_languages:
+        t = time.perf_counter()
+        translated, translation_usage = bridge_query(query, detect_language(query))
+        lat["translate_ms"] = round((time.perf_counter() - t) * 1000, 1)
+    queries = [query] + ([translated] if translated else [])
+    expansions = expand_query_terms(" ".join(queries))
+    pools = [[kd] for kd in (kinds or ("book", "lecture"))]
+    dense_lists: list[list[Hit]] = []
+    lexical_lists: list[list[Hit]] = []
     if mode in ("dense", "hybrid"):
         t = time.perf_counter()
         embedder = get_embedding_provider()
-        vecs, usage = embedder.embed([query])
+        vecs, usage = embedder.embed(queries)
         lat["embed_ms"] = round((time.perf_counter() - t) * 1000, 1)
         t = time.perf_counter()
-        dense = dense_search(db, vecs[0], candidate_k, source_ids, kinds)
+        dense_lists = [
+            dense_search(db, v, candidate_k, source_ids, pool) for v in vecs for pool in pools
+        ]
         lat["dense_ms"] = round((time.perf_counter() - t) * 1000, 1)
     if mode in ("lexical", "hybrid"):
         t = time.perf_counter()
-        lexical = lexical_search(db, fold(query), candidate_k, source_ids, kinds, expansions)
+        lexical_lists = [
+            lexical_search(db, fold(q), candidate_k, source_ids, pool, expansions)
+            for q in queries
+            for pool in pools
+        ]
         lat["lexical_ms"] = round((time.perf_counter() - t) * 1000, 1)
-    if mode == "dense":
-        hits = dense[:k]
-    elif mode == "lexical":
-        hits = lexical[:k]
-    else:
-        hits = rrf_fuse(dense, lexical, k)
+    fuse_k = max(k, settings.rerank_candidates) if rerank else k
+    hits = rrf_fuse_many(dense_lists, lexical_lists, fuse_k)
+    rerank_usage = Usage()
+    reranked = False
+    if rerank and hits:
+        from rmd.retrieval.rerank import rerank as _rerank
+
+        fused = hits
+        t = time.perf_counter()
+        hits, rerank_usage = _rerank(query, fused, keep=k)
+        lat["rerank_ms"] = round((time.perf_counter() - t) * 1000, 1)
+        hits = ensure_kind_diversity(hits, fused, k)
+        reranked = True
     return RetrievalResult(
-        hits=hits, mode=mode, latency_ms=lat, usage=usage, expanded_terms=expansions
+        hits=hits,
+        mode=mode,
+        latency_ms=lat,
+        usage=usage,
+        expanded_terms=expansions,
+        translated_query=translated,
+        translation_usage=translation_usage,
+        reranked=reranked,
+        rerank_usage=rerank_usage,
     )

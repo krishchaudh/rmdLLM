@@ -81,6 +81,7 @@ def ask(request: Request, body: AskRequest, db: Session = Depends(get_db)):
             "mode": ans.retrieval_mode,
             "model": ans.model,
             "followups": ans.followups,
+            "translated_query": ans.translated_query,
         },
         latency_ms=ans.latency_ms,
         token_usage=ans.usage,

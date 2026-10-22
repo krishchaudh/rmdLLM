@@ -47,7 +47,7 @@ tests/            cross-service / e2e tests
 
 ## Answer pipeline
 1. Detect language/script of the question (Devanagari / Latin; Romanized Hindi heuristic).
-2. Retrieve: dense (pgvector cosine) + lexical (tsvector / BM25) → Reciprocal Rank Fusion → optional rerank.
+2. Retrieve: detect question language → bridge it (LLM-translate hi/hi-Latn→en, en→hi) so both forms are searched → dense (pgvector cosine) + lexical (tsvector) per source kind (book / lecture pooled separately so the big English book can't crowd out the small Hindi lecture) → Reciprocal Rank Fusion over all lists → LLM listwise rerank of the top `RERANK_CANDIDATES` (default 16) → top-k.
 3. Generate with a system prompt that treats passages as **untrusted data** (prompt-injection defence),
    requires `[n]` citations, distinguishes quote vs paraphrase vs translation.
 4. Verify: every citation id must exist; each claim must be supported by its cited passage; unsupported

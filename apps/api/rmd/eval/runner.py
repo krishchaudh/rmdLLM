@@ -78,6 +78,7 @@ def eval_retrieval(db: Session, q: dict, *, mode: str, k: int) -> dict:
         "latency_ms": round(elapsed, 1),
         "hits": hits,
         "expanded_terms": res.expanded_terms,
+        "translated_query": res.translated_query,
     }
     if expected:
         out.update(

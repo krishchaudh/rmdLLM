@@ -82,6 +82,7 @@ class Answer:
     usage: dict = field(default_factory=dict)
     estimated_cost_usd: float = 0.0
     model: str = ""
+    translated_query: str | None = None
 
 
 def _split_followups(text: str) -> tuple[str, list[str]]:
@@ -115,6 +116,10 @@ def answer_question(
     rr = retrieve(db, question, k=k, mode=mode)
     lat["retrieval_ms"] = round((time.perf_counter() - t) * 1000, 1)
     _accumulate(usage, rr.usage, "embedding")
+    if rr.translated_query:
+        _accumulate(usage, rr.translation_usage, "translation")
+    if rr.reranked:
+        _accumulate(usage, rr.rerank_usage, "rerank")
     citations = [hit_to_citation(i, h) for i, h in enumerate(rr.hits, start=1)]
 
     if not citations:
@@ -126,6 +131,7 @@ def answer_question(
             verification={"skipped": "no_passages"},
             language=lang,
             retrieval_mode=mode,
+            translated_query=rr.translated_query,
             latency_ms=lat,
             usage=usage,
             model=s.generation_model,
@@ -138,7 +144,11 @@ def answer_question(
             "\n\nPREVIOUS CONVERSATION (for context only; cite passages, not this):\n"
             + "\n".join(f"{m['role']}: {m['content'][:500]}" for m in history[-6:])
         )
-    user_msg = f"SOURCE PASSAGES:\n{passages_block}{convo}\n\nQUESTION: {question}"
+    lang_rule = _LANG_RULE[lang]
+    user_msg = (
+        f"SOURCE PASSAGES:\n{passages_block}{convo}\n\nQUESTION: {question}\n\n"
+        f"ANSWER LANGUAGE: {lang_rule} (decided from THIS question, not from earlier turns)"
+    )
 
     t = time.perf_counter()
     gen = llm.chat(_msgs(SYSTEM_ANSWER, user_msg), temperature=0.1, max_tokens=900)
@@ -160,6 +170,7 @@ def answer_question(
             verification={"skipped": "model_abstained"},
             language=lang,
             retrieval_mode=mode,
+            translated_query=rr.translated_query,
             latency_ms=lat,
             usage=usage,
             estimated_cost_usd=_cost(usage),
@@ -215,6 +226,7 @@ def answer_question(
                     verification=verification,
                     language=lang,
                     retrieval_mode=mode,
+                    translated_query=rr.translated_query,
                     latency_ms=lat,
                     usage=usage,
                     estimated_cost_usd=_cost(usage),
@@ -235,6 +247,7 @@ def answer_question(
             verification={**verification, "reason": "no_citations_in_answer"},
             language=lang,
             retrieval_mode=mode,
+            translated_query=rr.translated_query,
             latency_ms=lat,
             usage=usage,
             estimated_cost_usd=_cost(usage),
@@ -249,6 +262,7 @@ def answer_question(
         verification=verification,
         language=lang,
         retrieval_mode=mode,
+        translated_query=rr.translated_query,
         latency_ms=lat,
         usage=usage,
         estimated_cost_usd=_cost(usage),
@@ -286,6 +300,13 @@ def _parse_claims(text: str) -> list[dict]:
             return []
     claims = data.get("claims", []) if isinstance(data, dict) else []
     return [c for c in claims if isinstance(c, dict)]
+
+
+_LANG_RULE = {
+    "en": "English",
+    "hi": "Hindi in Devanagari script",
+    "hi-Latn": "Romanized Hindi (Hinglish) in Latin letters only, no Devanagari",
+}
 
 
 def _abstain_text(lang: str, reason: str) -> str:
