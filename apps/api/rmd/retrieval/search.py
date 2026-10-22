@@ -186,6 +186,25 @@ def rrf_fuse_many(
     return sorted(merged.values(), key=lambda h: h.score, reverse=True)[:k]
 
 
+def ensure_kind_diversity(hits: list[Hit], fused: list[Hit], k: int) -> list[Hit]:
+    """Guarantee each source kind's top fused hit survives reranking (if it was fused top-3).
+
+    The LLM reranker tends to prefer clean English prose over colloquial Hindi speech, so
+    without this the lecture can vanish from answers it is highly relevant to.
+    """
+    kept = {h.chunk_id for h in hits}
+    out = list(hits)
+    for kind in {h.kind for h in fused}:
+        best = next((h for h in fused[:3] if h.kind == kind), None)
+        if best is None or best.chunk_id in kept:
+            continue
+        if len(out) >= k:
+            out.pop()
+        out.append(best)
+        kept.add(best.chunk_id)
+    return out[:k]
+
+
 def retrieve(
     db: Session,
     query: str,
@@ -246,9 +265,11 @@ def retrieve(
     if rerank and hits:
         from rmd.retrieval.rerank import rerank as _rerank
 
+        fused = hits
         t = time.perf_counter()
-        hits, rerank_usage = _rerank(query, hits, keep=k)
+        hits, rerank_usage = _rerank(query, fused, keep=k)
         lat["rerank_ms"] = round((time.perf_counter() - t) * 1000, 1)
+        hits = ensure_kind_diversity(hits, fused, k)
         reranked = True
     return RetrievalResult(
         hits=hits,

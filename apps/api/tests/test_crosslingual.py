@@ -64,3 +64,17 @@ def test_rerank_reorders_and_backfills(monkeypatch):
     assert out[0].rerank_rank == 1 and out[2].rerank_rank is None
     assert usage.total_tokens > 0
     assert "<passage n=1" in llm.calls[-1][1]["content"]
+
+
+def test_ensure_kind_diversity_restores_top_fused_hit_of_dropped_kind():
+    from rmd.retrieval.search import ensure_kind_diversity
+
+    lec = _hit(uuid.uuid4(), "lecture")
+    lec.kind = "lecture"
+    books = [_hit(uuid.uuid4(), f"b{i}") for i in range(5)]
+    fused = [lec] + books
+    reranked = books[:3]
+    out = ensure_kind_diversity(reranked, fused, k=3)
+    assert [h.chunk_id for h in out] == [books[0].chunk_id, books[1].chunk_id, lec.chunk_id]
+    # nothing to do when already present
+    assert ensure_kind_diversity([lec] + books[:2], fused, k=3) == [lec] + books[:2]
