@@ -89,10 +89,14 @@ body {
 
 .caret {
   @apply ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[0.2em] bg-stone-400 align-baseline;
-  animation: blink 1s steps(2) infinite;
+  animation: blink 1s step-end infinite;
 }
 @keyframes blink {
-  to {
-    visibility: hidden;
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
   }
 }

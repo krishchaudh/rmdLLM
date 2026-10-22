@@ -11,9 +11,11 @@ export function renderWithCites(
   cites: Citation[],
   active: number | null,
   onCite: (n: number) => void,
+  tail?: React.ReactNode,
 ) {
   const valid = new Set(cites.map((c) => c.n));
-  return text.split(/\n{2,}/).map((para, pi) => {
+  const paras = text.split(/\n{2,}/);
+  return paras.map((para, pi) => {
     const parts: React.ReactNode[] = [];
     let last = 0;
     for (const m of Array.from(para.matchAll(CITE))) {
@@ -37,6 +39,7 @@ export function renderWithCites(
     return (
       <p key={pi} className={hasDevanagari(para) ? "devanagari" : undefined}>
         {parts.map((p, i) => <Fragment key={i}>{p}</Fragment>)}
+        {pi === paras.length - 1 ? tail : null}
       </p>
     );
   });
@@ -95,6 +98,13 @@ export function StreamingAnswer({
   onSettled: () => void;
 }) {
   const shown = useSmoothText(text, final, onSettled);
+  // Follow the growing answer unless the reader has scrolled away from the bottom.
+  useEffect(() => {
+    const el = document.scrollingElement;
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 260) {
+      window.scrollTo(0, el.scrollHeight);
+    }
+  }, [shown.length]);
   const label =
     stage === "retrieval"
       ? "Searching the sources"
@@ -105,8 +115,7 @@ export function StreamingAnswer({
     <div>
       {shown && (
         <div className="prose-answer text-[17px] leading-[1.75] text-stone-800">
-          {renderWithCites(shown, citations, null, () => {})}
-          <span className="caret" aria-hidden />
+          {renderWithCites(shown, citations, null, () => {}, <span className="caret" aria-hidden />)}
         </div>
       )}
       <div className={`flex items-center gap-3 text-sm text-stone-400 ${shown ? "mt-4" : ""}`}>
@@ -148,7 +157,7 @@ export function Answer({
     }
   };
   return (
-    <div className="fade-in">
+    <div>
       {abstained && (
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-stone-200 bg-white px-3 py-1 text-xs text-stone-500">
           <span className="h-1.5 w-1.5 rounded-full bg-stone-400" />
