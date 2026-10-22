@@ -300,5 +300,5 @@ def _abstain_text(lang: str, reason: str) -> str:
 def _cost(usage: dict) -> float:
     total = 0.0
     for v in usage.values():
-        total += estimate_cost_usd(Usage(v["prompt"], v["completion"], v["model"]))
+        total += estimate_cost_usd(Usage(v["prompt"], v["completion"], v["model"])) or 0.0
     return round(total, 6)

@@ -13,4 +13,5 @@ COPY scripts ./scripts
 RUN mkdir -p /data/uploads
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://localhost:8000/health || exit 1
-CMD ["sh", "-c", "alembic upgrade head && uvicorn rmd.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+RUN chmod +x scripts/start.sh
+CMD ["sh", "scripts/start.sh"]
