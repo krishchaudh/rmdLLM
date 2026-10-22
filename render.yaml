@@ -1,0 +1,41 @@
+# Render Blueprint — staging. Postgres lives on Neon (pgvector), set DATABASE_URL in the dashboard.
+services:
+  - type: web
+    name: rmd-api
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: staging
+      - key: DATABASE_URL
+        sync: false # Neon connection string, postgresql+psycopg://...
+      - key: REDIS_URL
+        fromService: { type: redis, name: rmd-redis, property: connectionString }
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: openai
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: '["https://rmd-web.vercel.app"]' # replace with the Vercel URL
+      - key: UPLOAD_DIR
+        value: /data/uploads
+    disk:
+      name: uploads
+      mountPath: /data/uploads
+      sizeGB: 1
+  - type: redis
+    name: rmd-redis
+    plan: free
+    ipAllowList: []
