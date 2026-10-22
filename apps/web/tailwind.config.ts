@@ -6,6 +6,7 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif)", "Georgia", "serif"],
         devanagari: ["var(--font-devanagari)", "Noto Sans Devanagari", "sans-serif"],
       },
       colors: {
