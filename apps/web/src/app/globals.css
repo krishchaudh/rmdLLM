@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-sans: "Inter", system-ui, sans-serif;
+  --font-devanagari: "Noto Sans Devanagari", "Mangal", sans-serif;
+}
+
+body {
+  @apply bg-stone-50 text-stone-900 antialiased;
+}
+
+.devanagari {
+  font-family: var(--font-devanagari), var(--font-sans);
+  line-height: 1.9;
+}
