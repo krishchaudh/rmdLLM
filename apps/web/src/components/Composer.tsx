@@ -46,7 +46,7 @@ export function Composer({
           }
         }}
         placeholder="Ask in English, हिन्दी, or Hinglish…"
-        className={`w-full resize-none rounded-2xl border border-stone-200 bg-white pr-14 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:shadow-md ${
+        className={`w-full resize-none overflow-hidden rounded-2xl border border-stone-200 bg-white pr-14 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:shadow-md ${
           large ? "px-5 py-4 text-[17px]" : "px-4 py-3 text-[15px]"
         } ${hasDevanagari(value) ? "devanagari" : ""}`}
       />
