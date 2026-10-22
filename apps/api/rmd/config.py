@@ -1,8 +1,9 @@
+import json
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -13,7 +14,9 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://rmd:rmd@localhost:5433/rmd"
     redis_url: str = "redis://localhost:6380/0"
     upload_dir: str = "./data/uploads"
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
 
     admin_username: str = "admin"
     admin_password: str = "change-me"
@@ -35,6 +38,9 @@ class Settings(BaseSettings):
     @classmethod
     def _split_origins(cls, v: object) -> object:
         if isinstance(v, str):
+            v = v.strip()
+            if v.startswith("["):
+                return json.loads(v)
             return [o.strip() for o in v.split(",") if o.strip()]
         return v
 
