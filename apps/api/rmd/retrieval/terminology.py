@@ -29,7 +29,7 @@ TERMS: dict[str, list[str]] = {
     "jiva": ["जीव", "jīva", "jiva", "jeev", "soul"],
     "sansar": ["संसार", "saṁsāra", "samsara", "sansar", "material world"],
     "sukh": ["सुख", "sukha", "sukh", "happiness"],
-    "dhan": ["धन", "dhana", "dhan", "wealth", "money"],
+    "dhan": ["धन", "dhana", "dhan", "wealth", "money", "पैसा", "paisa", "लखपति", "करोड़पति"],
     "bachpan": ["बचपन", "bachpan", "childhood", "कौमार", "kaumara"],
     "mann": ["मन", "mana", "mann", "mind"],
     "ananda": ["आनन्द", "आनंद", "ānanda", "anand", "bliss"],

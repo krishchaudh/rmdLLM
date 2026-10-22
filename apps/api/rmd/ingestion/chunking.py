@@ -127,9 +127,9 @@ def chunk_transcript_segments(
     segments: list[dict],
     *,
     youtube_id: str,
-    target_tokens: int = 220,
-    max_window_seconds: int = 90,
-    overlap_segments: int = 1,
+    target_tokens: int = 420,
+    max_window_seconds: int = 120,
+    overlap_segments: int = 2,
 ) -> list[ChunkDraft]:
     """`segments`: [{idx, start_seconds, end_seconds, text}] ordered by start.
 
