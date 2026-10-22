@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, type Citation, hasDevanagari, type AskResponse } from "@/lib/api";
-import { Answer } from "./Answer";
+import { Answer, StreamingAnswer } from "./Answer";
 import { Citations } from "./Citations";
 import { Composer } from "./Composer";
 
@@ -12,14 +12,9 @@ type Turn = {
   question: string;
   response?: AskResponse;
   error?: string;
-  stream?: { stage: Stage; text: string; citations: Citation[] };
+  stream?: { stage: Stage; text: string; citations: Citation[]; final?: boolean };
 };
 
-const STAGE_LABEL: Record<Stage, string> = {
-  retrieval: "Searching the sources",
-  generation: "Writing",
-  verification: "Verifying every claim against the sources",
-};
 
 const SUGGESTIONS = [
   "Why doesn't material wealth provide lasting happiness?",
@@ -29,31 +24,6 @@ const SUGGESTIONS = [
 ];
 
 const STORAGE_KEY = "rmd.chat.v1";
-
-function StreamingAnswer({ stream }: { stream?: Turn["stream"] }) {
-  const stage = stream?.stage ?? "retrieval";
-  const text = (stream?.text ?? "").replace(/\s*\[\d+\]/g, "");
-  return (
-    <div>
-      {text && (
-        <div
-          className={`whitespace-pre-wrap text-[17px] leading-[1.75] text-stone-800 ${
-            hasDevanagari(text) ? "devanagari" : ""
-          }`}
-        >
-          {text}
-          <span className="caret" aria-hidden />
-        </div>
-      )}
-      <div className={`flex items-center gap-3 text-sm text-stone-400 ${text ? "mt-4" : ""}`}>
-        <span className="thinking flex gap-1">
-          <span /> <span /> <span />
-        </span>
-        {STAGE_LABEL[stage]}
-      </div>
-    </div>
-  );
-}
 
 export function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -100,21 +70,30 @@ export function Chat() {
     setDraft("");
     setBusy(true);
     try {
-      const patch = (f: (s: NonNullable<Turn["stream"]>) => Partial<NonNullable<Turn["stream"]>>) =>
-        setTurns((t) =>
-          t.map((x) => {
-            if (x.id !== id) return x;
-            const cur = x.stream ?? { stage: "retrieval" as Stage, text: "", citations: [] };
-            return { ...x, stream: { ...cur, ...f(cur) } };
-          }),
-        );
+      // Accumulate deltas locally and flush at most once per animation frame; the typewriter
+      // in StreamingAnswer then paces the reveal so bursts from the server don't show as jumps.
+      let cur: NonNullable<Turn["stream"]> = { stage: "retrieval", text: "", citations: [] };
+      let raf = 0;
+      const flush = () => {
+        raf = 0;
+        const snap = cur;
+        setTurns((t) => t.map((x) => (x.id === id ? { ...x, stream: snap } : x)));
+      };
+      const schedule = () => {
+        if (!raf) raf = requestAnimationFrame(flush);
+      };
       const r = await api.askStream(q, conversationId, (ev) => {
-        if (ev.type === "status") patch(() => ({ stage: ev.stage }));
-        else if (ev.type === "token") patch((s) => ({ text: s.text + ev.text }));
-        else if (ev.type === "citations") patch(() => ({ citations: ev.citations }));
+        if (ev.type === "status") cur = { ...cur, stage: ev.stage };
+        else if (ev.type === "token") cur = { ...cur, text: cur.text + ev.text };
+        else if (ev.type === "citations") cur = { ...cur, citations: ev.citations };
+        else return;
+        schedule();
       });
+      if (raf) cancelAnimationFrame(raf);
       setConversationId(r.conversation_id);
-      setTurns((t) => t.map((x) => (x.id === id ? { ...x, response: r, stream: undefined } : x)));
+      // Keep the typewriter until it has caught up, then hand off to the final Answer.
+      const finalStream = { ...cur, text: r.answer, citations: r.citations, final: true };
+      setTurns((t) => t.map((x) => (x.id === id ? { ...x, response: r, stream: finalStream } : x)));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong";
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, error: msg } : x)));
@@ -179,7 +158,7 @@ export function Chat() {
                   {t.question}
                 </h2>
                 <div className="mt-5">
-                  {t.response ? (
+                  {t.response && !t.stream ? (
                     <Answer
                       messageId={t.response.message_id}
                       answer={t.response.answer}
@@ -193,12 +172,18 @@ export function Chat() {
                   ) : t.error ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{t.error}</div>
                   ) : (
-                    <StreamingAnswer stream={t.stream} />
+                    <StreamingAnswer
+                      text={t.stream?.text ?? ""}
+                      citations={t.stream?.citations ?? []}
+                      stage={t.stream?.stage ?? "retrieval"}
+                      final={!!t.stream?.final}
+                      onSettled={() => setTurns((ts) => ts.map((x) => (x.id === t.id ? { ...x, stream: undefined } : x)))}
+                    />
                   )}
                 </div>
               </div>
               <div className="lg:pt-1">
-                {t.response ? (
+                {t.response && !t.stream ? (
                   <Citations citations={t.response.citations} active={act} setActive={setAct} />
                 ) : t.stream?.citations.length ? (
                   <div className="fade-in">
