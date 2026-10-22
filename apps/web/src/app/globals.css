@@ -86,3 +86,13 @@ body {
   background: #d6d3d1;
   border-radius: 3px;
 }
+
+.caret {
+  @apply ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[0.2em] bg-stone-400 align-baseline;
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
+}

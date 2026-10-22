@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 
@@ -46,6 +47,24 @@ class LLMProvider(ABC):
         max_tokens: int | None = None,
         json_mode: bool = False,
     ) -> ChatResult: ...
+
+    def chat_stream(
+        self,
+        messages: list[dict],
+        on_token: Callable[[str], None],
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
+        """Like chat(), but calls on_token with text deltas as they arrive.
+
+        Default implementation is non-streaming: one callback with the whole text.
+        """
+        res = self.chat(messages, model=model, temperature=temperature, max_tokens=max_tokens)
+        if res.text:
+            on_token(res.text)
+        return res
 
     @abstractmethod
     def ocr_image(self, png_bytes: bytes, *, model: str | None = None) -> ChatResult: ...

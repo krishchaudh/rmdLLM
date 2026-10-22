@@ -102,12 +102,69 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string |
   return (await res.json()) as T;
 }
 
+export type StreamEvent =
+  | { type: "status"; stage: "retrieval" | "generation" | "verification" }
+  | { type: "token"; text: string }
+  | { type: "citations"; citations: Citation[] }
+  | { type: "done"; response: AskResponse }
+  | { type: "error"; detail: string };
+
+async function askStream(
+  question: string,
+  conversation_id: string | null | undefined,
+  onEvent: (e: StreamEvent) => void,
+): Promise<AskResponse> {
+  const res = await fetch(`${API_BASE}/ask/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ question, conversation_id: conversation_id ?? null }),
+    cache: "no-store",
+  });
+  if (!res.ok || !res.body) {
+    let detail = res.statusText;
+    try {
+      const j = await res.json();
+      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j);
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  let done: AskResponse | null = null;
+  for (;;) {
+    const { value, done: eof } = await reader.read();
+    if (eof) break;
+    buf += dec.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const data = frame
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trim())
+        .join("");
+      if (!data) continue;
+      const ev = JSON.parse(data) as StreamEvent;
+      if (ev.type === "error") throw new ApiError(503, ev.detail);
+      if (ev.type === "done") done = ev.response;
+      onEvent(ev);
+    }
+  }
+  if (!done) throw new ApiError(502, "The answer stream ended unexpectedly, please retry");
+  return done;
+}
+
 export const api = {
   ask: (question: string, conversation_id?: string | null) =>
     request<AskResponse>("/ask", {
       method: "POST",
       body: JSON.stringify({ question, conversation_id: conversation_id ?? null }),
     }),
+  askStream,
   feedback: (message_id: string, rating: 1 | -1, comment?: string) =>
     request("/feedback", { method: "POST", body: JSON.stringify({ message_id, rating, comment }) }),
   sources: () => request<Source[]>("/sources"),

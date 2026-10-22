@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -85,6 +86,43 @@ class Answer:
     translated_query: str | None = None
 
 
+class TokenStreamer:
+    """Forwards generation deltas to a sink while holding back text the user should not see:
+    a possible leading ``ABSTAIN`` marker and the trailing ``FOLLOWUPS:`` block.
+    """
+
+    _HOLD = 8  # len("ABSTAIN") + 1
+
+    def __init__(self, sink: Callable[[str], None]) -> None:
+        self._sink = sink
+        self._buf = ""
+        self._sent = 0
+        self._stopped = False
+
+    def push(self, delta: str) -> None:
+        if self._stopped or not delta:
+            return
+        self._buf += delta
+        if self._buf.lstrip().upper().startswith("ABSTAIN") or (
+            len(self._buf.strip()) < self._HOLD and "ABSTAIN".startswith(self._buf.strip().upper())
+        ):
+            return  # abstention text is rendered by the server, not streamed
+        cut = self._buf.find("FOLLOWUPS:")
+        if cut >= 0:
+            self._flush_to(len(self._buf[:cut].rstrip()))
+            self._stopped = True
+            return
+        # keep a small tail so a split "FOLLOW" + "UPS:" marker is never leaked
+        safe = len(self._buf) - len("FOLLOWUPS:")
+        if safe > self._sent:
+            self._flush_to(safe)
+
+    def _flush_to(self, end: int) -> None:
+        if end > self._sent:
+            self._sink(self._buf[self._sent : end])
+            self._sent = end
+
+
 def _split_followups(text: str) -> tuple[str, list[str]]:
     if "FOLLOWUPS:" not in text:
         return text.strip(), []
@@ -105,13 +143,19 @@ def answer_question(
     mode: str = "hybrid",
     history: list[dict] | None = None,
     verify: bool = True,
+    on_event: Callable[[dict], None] | None = None,
 ) -> Answer:
+    """Answer a question. If on_event is given, progress events are emitted:
+    {"type":"status","stage":...}, {"type":"token","text":...}, {"type":"citations","citations":[...]}.
+    """
+    emit = on_event or (lambda _e: None)
     s = get_settings()
     llm = get_llm_provider()
     lat: dict[str, float] = {}
     usage: dict = {}
     lang = detect_language(question)
 
+    emit({"type": "status", "stage": "retrieval"})
     t = time.perf_counter()
     rr = retrieve(db, question, k=k, mode=mode)
     lat["retrieval_ms"] = round((time.perf_counter() - t) * 1000, 1)
@@ -121,6 +165,7 @@ def answer_question(
     if rr.reranked:
         _accumulate(usage, rr.rerank_usage, "rerank")
     citations = [hit_to_citation(i, h) for i, h in enumerate(rr.hits, start=1)]
+    emit({"type": "citations", "citations": citations})
 
     if not citations:
         return Answer(
@@ -150,8 +195,15 @@ def answer_question(
         f"ANSWER LANGUAGE: {lang_rule} (decided from THIS question, not from earlier turns)"
     )
 
+    emit({"type": "status", "stage": "generation"})
     t = time.perf_counter()
-    gen = llm.chat(_msgs(SYSTEM_ANSWER, user_msg), temperature=0.1, max_tokens=900)
+    if on_event:
+        streamer = TokenStreamer(lambda txt: emit({"type": "token", "text": txt}))
+        gen = llm.chat_stream(
+            _msgs(SYSTEM_ANSWER, user_msg), streamer.push, temperature=0.1, max_tokens=900
+        )
+    else:
+        gen = llm.chat(_msgs(SYSTEM_ANSWER, user_msg), temperature=0.1, max_tokens=900)
     lat["generation_ms"] = round((time.perf_counter() - t) * 1000, 1)
     _accumulate(usage, gen.usage, "generation")
     draft = gen.text.strip()
@@ -182,6 +234,7 @@ def answer_question(
     verification: dict = {"invalid_citations_removed": invalid}
 
     if verify:
+        emit({"type": "status", "stage": "verification"})
         t = time.perf_counter()
         ver = llm.chat(
             _msgs(SYSTEM_VERIFY, f"SOURCE PASSAGES:\n{passages_block}\n\nDRAFT ANSWER:\n{body}"),
