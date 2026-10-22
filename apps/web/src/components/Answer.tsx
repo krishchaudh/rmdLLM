@@ -98,12 +98,33 @@ export function StreamingAnswer({
   onSettled: () => void;
 }) {
   const shown = useSmoothText(text, final, onSettled);
-  // Follow the growing answer unless the reader has scrolled away from the bottom.
+  // Follow the growing answer until the reader scrolls up; resume if they return to the bottom.
+  const follow = useRef(true);
   useEffect(() => {
     const el = document.scrollingElement;
-    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 260) {
-      window.scrollTo(0, el.scrollHeight);
-    }
+    if (!el) return;
+    const nearBottom = () => el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) follow.current = false;
+    };
+    const onTouch = () => {
+      follow.current = false;
+    };
+    const onScroll = () => {
+      if (nearBottom()) follow.current = true;
+    };
+    window.addEventListener("wheel", onWheel, { passive: true });
+    window.addEventListener("touchmove", onTouch, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchmove", onTouch);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+  useEffect(() => {
+    const el = document.scrollingElement;
+    if (follow.current && el) window.scrollTo(0, el.scrollHeight);
   }, [shown.length]);
   const label =
     stage === "retrieval"
