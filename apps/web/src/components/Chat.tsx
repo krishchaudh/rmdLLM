@@ -15,6 +15,8 @@ const SUGGESTIONS = [
   "What is prema rasa according to the book?",
 ];
 
+const STORAGE_KEY = "rmd.chat.v1";
+
 export function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [draft, setDraft] = useState("");
@@ -22,10 +24,37 @@ export function Chat() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [active, setActive] = useState<{ turn: string; n: number } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [restored, setRestored] = useState(false);
+
+  // Keep the conversation across navigation (e.g. opening a source page and coming back).
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as { turns: Turn[]; conversationId: string | null };
+        setTurns(saved.turns.filter((t) => t.response || t.error));
+        setConversationId(saved.conversationId);
+      }
+    } catch {
+      /* ignore corrupt storage */
+    }
+    setRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!restored) return;
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ turns, conversationId }));
+  }, [turns, conversationId, restored]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (busy) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, busy]);
+
+  const reset = () => {
+    setTurns([]);
+    setConversationId(null);
+    setActive(null);
+    sessionStorage.removeItem(STORAGE_KEY);
+  };
 
   const ask = async (q: string) => {
     const id = crypto.randomUUID();
@@ -76,6 +105,15 @@ export function Chat() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 pb-36 pt-8 sm:px-6">
+      <div className="mb-4 flex justify-end">
+        <button
+          type="button"
+          onClick={reset}
+          className="rounded-full border border-stone-200 px-3 py-1 text-xs text-stone-500 transition hover:border-stone-400 hover:text-stone-800"
+        >
+          New conversation
+        </button>
+      </div>
       <div className="space-y-14">
         {turns.map((t) => {
           const act = active?.turn === t.id ? active.n : null;
