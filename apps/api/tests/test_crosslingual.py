@@ -72,9 +72,14 @@ def test_ensure_kind_diversity_restores_top_fused_hit_of_dropped_kind():
     lec = _hit(uuid.uuid4(), "lecture")
     lec.kind = "lecture"
     books = [_hit(uuid.uuid4(), f"b{i}") for i in range(5)]
-    fused = [lec] + books
-    reranked = books[:3]
-    out = ensure_kind_diversity(reranked, fused, k=3)
+    for i, h in enumerate(books, start=1):
+        h.rerank_rank = i
+    lec.rerank_rank = 6  # judged relevant by the reranker, but just below the cut
+    ranked = books + [lec]
+    out = ensure_kind_diversity(ranked[:3], ranked, k=3)
     assert [h.chunk_id for h in out] == [books[0].chunk_id, books[1].chunk_id, lec.chunk_id]
     # nothing to do when already present
-    assert ensure_kind_diversity([lec] + books[:2], fused, k=3) == [lec] + books[:2]
+    assert ensure_kind_diversity([lec] + books[:2], ranked, k=3) == [lec] + books[:2]
+    # not forced in when the reranker did not consider it relevant
+    lec.rerank_rank = None
+    assert ensure_kind_diversity(ranked[:3], ranked, k=3) == books[:3]

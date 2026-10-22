@@ -33,6 +33,30 @@ from rmd.retrieval.search import Hit, retrieve
 
 KS = (1, 3, 5, 8)
 
+# Named retrieval configurations for ablations. Plain "dense" / "lexical" / "hybrid" are also
+# accepted and map to {"mode": ...} with the production defaults for everything else.
+VARIANTS: dict[str, dict] = {
+    "baseline": {"mode": "dense", "bridge_languages": False, "rerank": False, "pooled": False},
+    "hybrid_only": {"mode": "hybrid", "bridge_languages": False, "rerank": False, "pooled": False},
+    "hybrid_bridge": {
+        "mode": "hybrid",
+        "bridge_languages": True,
+        "rerank": False,
+        "pooled": False,
+    },
+    "hybrid_bridge_pool": {
+        "mode": "hybrid",
+        "bridge_languages": True,
+        "rerank": False,
+        "pooled": True,
+    },
+    "full": {"mode": "hybrid", "bridge_languages": True, "rerank": True, "pooled": True},
+}
+
+
+def variant_kwargs(name: str) -> dict:
+    return dict(VARIANTS.get(name) or {"mode": name})
+
 
 @dataclass
 class QuestionResult:
@@ -68,7 +92,7 @@ def _hit_dict(h: Hit) -> dict:
 
 def eval_retrieval(db: Session, q: dict, *, mode: str, k: int) -> dict:
     t = time.perf_counter()
-    res = retrieve(db, q["question"], k=k, mode=mode)
+    res = retrieve(db, q["question"], k=k, **variant_kwargs(mode))
     elapsed = (time.perf_counter() - t) * 1000
     hits = [_hit_dict(h) for h in res.hits]
     expected = q.get("expected", [])
@@ -78,6 +102,8 @@ def eval_retrieval(db: Session, q: dict, *, mode: str, k: int) -> dict:
         "latency_ms": round(elapsed, 1),
         "hits": hits,
         "expanded_terms": res.expanded_terms,
+        "latency_breakdown_ms": res.latency_ms,
+        "reranked": res.reranked,
         "translated_query": res.translated_query,
     }
     if expected:
@@ -96,7 +122,7 @@ def eval_retrieval(db: Session, q: dict, *, mode: str, k: int) -> dict:
 def eval_answer(db: Session, q: dict, *, mode: str, k: int) -> dict:
     from rmd.generation.answer import answer_question
 
-    a = answer_question(db, q["question"], k=k, mode=mode)
+    a = answer_question(db, q["question"], k=k, mode=variant_kwargs(mode)["mode"])
     expected = q.get("expected", [])
     cited = [c for c in a.citations if f"[{c['n']}]" in a.answer]
     cited_hits = [
