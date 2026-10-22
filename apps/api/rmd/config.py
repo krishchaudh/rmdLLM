@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1024
     generation_model: str = "gpt-4.1-mini"
+    rerank_enabled: bool = True
+    rerank_candidates: int = 16
     verification_model: str = "gpt-4.1-mini"
 
     rate_limit_ask: str = "20/minute"
