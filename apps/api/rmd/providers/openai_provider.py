@@ -86,6 +86,45 @@ class OpenAILLM(LLMProvider):
             latency_ms=round(latency, 1),
         )
 
+    @_retry
+    def chat_stream(
+        self,
+        messages: list[dict],
+        on_token,
+        *,
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
+        model = model or self._settings.generation_model
+        kwargs: dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if max_tokens:
+            kwargs["max_tokens"] = max_tokens
+        t0 = time.perf_counter()
+        parts: list[str] = []
+        prompt_tokens = completion_tokens = 0
+        for chunk in self._client.chat.completions.create(**kwargs):
+            if chunk.usage:
+                prompt_tokens, completion_tokens = (
+                    chunk.usage.prompt_tokens,
+                    chunk.usage.completion_tokens,
+                )
+            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                delta = chunk.choices[0].delta.content
+                parts.append(delta)
+                on_token(delta)
+        return ChatResult(
+            text="".join(parts),
+            usage=Usage(prompt_tokens, completion_tokens, model),
+            latency_ms=round((time.perf_counter() - t0) * 1000, 1),
+        )
+
     def ocr_image(self, png_bytes: bytes, *, model: str | None = None) -> ChatResult:
         b64 = base64.b64encode(png_bytes).decode()
         return self.chat(

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import queue
+import threading
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -40,9 +44,7 @@ class FeedbackRequest(BaseModel):
     categories: list[str] = Field(default_factory=list)
 
 
-@router.post("/ask", response_model=AskResponse)
-@limiter.limit("20/minute")
-def ask(request: Request, body: AskRequest, db: Session = Depends(get_db)):
+def _answer_and_persist(db: Session, body: AskRequest, on_event=None) -> AskResponse:
     conv = db.get(Conversation, body.conversation_id) if body.conversation_id else None
     if conv is None:
         conv = Conversation(language=None)
@@ -58,7 +60,7 @@ def ask(request: Request, body: AskRequest, db: Session = Depends(get_db)):
     db.flush()
 
     try:
-        ans = answer_question(db, body.question, mode=body.mode, history=history)
+        ans = answer_question(db, body.question, mode=body.mode, history=history, on_event=on_event)
     except Exception as exc:
         db.rollback()
         raise HTTPException(503, "Answering service unavailable, please retry") from exc
@@ -100,6 +102,49 @@ def ask(request: Request, body: AskRequest, db: Session = Depends(get_db)):
         language=ans.language,
         latency_ms=ans.latency_ms,
         verification_summary=summary,
+    )
+
+
+@router.post("/ask", response_model=AskResponse)
+@limiter.limit("20/minute")
+def ask(request: Request, body: AskRequest, db: Session = Depends(get_db)):
+    return _answer_and_persist(db, body)
+
+
+@router.post("/ask/stream")
+@limiter.limit("20/minute")
+def ask_stream(request: Request, body: AskRequest, db: Session = Depends(get_db)):
+    """Server-sent events: status / token / citations events, then a final `done` event
+    carrying the same payload as POST /ask (or an `error` event)."""
+    q: queue.Queue[dict | None] = queue.Queue()
+
+    def work() -> None:
+        try:
+            resp = _answer_and_persist(db, body, on_event=q.put)
+            q.put({"type": "done", "response": json.loads(resp.model_dump_json())})
+        except HTTPException as exc:
+            q.put({"type": "error", "detail": exc.detail})
+        except Exception:
+            q.put({"type": "error", "detail": "Answering service unavailable, please retry"})
+        finally:
+            q.put(None)
+
+    def events():
+        threading.Thread(target=work, daemon=True).start()
+        while True:
+            try:
+                ev = q.get(timeout=15)
+            except queue.Empty:
+                yield ": keepalive\n\n"
+                continue
+            if ev is None:
+                return
+            yield f"event: {ev['type']}\ndata: {json.dumps(ev, ensure_ascii=False, default=str)}\n\n"
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

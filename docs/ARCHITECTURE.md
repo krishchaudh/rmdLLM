@@ -55,6 +55,14 @@ tests/            cross-service / e2e tests
 5. Persist message + trace; return citations with deep links (`/sources/{id}/pdf#page=N`,
    `youtube.com/watch?v=ID&t=Ns`).
 
+### Streaming (`POST /ask/stream`)
+
+Same pipeline, delivered as server-sent events so the UI can show progress ChatGPT-style:
+`status` (retrieval → generation → verification), `citations` (as soon as retrieval finishes),
+`token` (generation deltas via `LLMProvider.chat_stream`), then `done` with the exact `POST /ask`
+payload. `TokenStreamer` holds back the `ABSTAIN` marker and the `FOLLOWUPS:` block so they never
+flash on screen; the verified/revised answer in `done` replaces the streamed draft.
+
 ## Security
 Env-based config, no secrets in repo, admin JWT auth, upload validation (type/size/hash),
 request validation (Pydantic), rate limiting (slowapi), safe error responses with request ids,

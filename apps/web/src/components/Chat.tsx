@@ -1,12 +1,25 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, hasDevanagari, type AskResponse } from "@/lib/api";
+import { api, type Citation, hasDevanagari, type AskResponse } from "@/lib/api";
 import { Answer } from "./Answer";
 import { Citations } from "./Citations";
 import { Composer } from "./Composer";
 
-type Turn = { id: string; question: string; response?: AskResponse; error?: string };
+type Stage = "retrieval" | "generation" | "verification";
+type Turn = {
+  id: string;
+  question: string;
+  response?: AskResponse;
+  error?: string;
+  stream?: { stage: Stage; text: string; citations: Citation[] };
+};
+
+const STAGE_LABEL: Record<Stage, string> = {
+  retrieval: "Searching the sources",
+  generation: "Writing",
+  verification: "Verifying every claim against the sources",
+};
 
 const SUGGESTIONS = [
   "Why doesn't material wealth provide lasting happiness?",
@@ -16,6 +29,31 @@ const SUGGESTIONS = [
 ];
 
 const STORAGE_KEY = "rmd.chat.v1";
+
+function StreamingAnswer({ stream }: { stream?: Turn["stream"] }) {
+  const stage = stream?.stage ?? "retrieval";
+  const text = (stream?.text ?? "").replace(/\s*\[\d+\]/g, "");
+  return (
+    <div>
+      {text && (
+        <div
+          className={`whitespace-pre-wrap text-[17px] leading-[1.75] text-stone-800 ${
+            hasDevanagari(text) ? "devanagari" : ""
+          }`}
+        >
+          {text}
+          <span className="caret" aria-hidden />
+        </div>
+      )}
+      <div className={`flex items-center gap-3 text-sm text-stone-400 ${text ? "mt-4" : ""}`}>
+        <span className="thinking flex gap-1">
+          <span /> <span /> <span />
+        </span>
+        {STAGE_LABEL[stage]}
+      </div>
+    </div>
+  );
+}
 
 export function Chat() {
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -62,9 +100,21 @@ export function Chat() {
     setDraft("");
     setBusy(true);
     try {
-      const r = await api.ask(q, conversationId);
+      const patch = (f: (s: NonNullable<Turn["stream"]>) => Partial<NonNullable<Turn["stream"]>>) =>
+        setTurns((t) =>
+          t.map((x) => {
+            if (x.id !== id) return x;
+            const cur = x.stream ?? { stage: "retrieval" as Stage, text: "", citations: [] };
+            return { ...x, stream: { ...cur, ...f(cur) } };
+          }),
+        );
+      const r = await api.askStream(q, conversationId, (ev) => {
+        if (ev.type === "status") patch(() => ({ stage: ev.stage }));
+        else if (ev.type === "token") patch((s) => ({ text: s.text + ev.text }));
+        else if (ev.type === "citations") patch(() => ({ citations: ev.citations }));
+      });
       setConversationId(r.conversation_id);
-      setTurns((t) => t.map((x) => (x.id === id ? { ...x, response: r } : x)));
+      setTurns((t) => t.map((x) => (x.id === id ? { ...x, response: r, stream: undefined } : x)));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Something went wrong";
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, error: msg } : x)));
@@ -143,17 +193,18 @@ export function Chat() {
                   ) : t.error ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{t.error}</div>
                   ) : (
-                    <div className="flex items-center gap-3 text-sm text-stone-400">
-                      <span className="thinking flex gap-1">
-                        <span /> <span /> <span />
-                      </span>
-                      Searching the sources
-                    </div>
+                    <StreamingAnswer stream={t.stream} />
                   )}
                 </div>
               </div>
               <div className="lg:pt-1">
-                {t.response && <Citations citations={t.response.citations} active={act} setActive={setAct} />}
+                {t.response ? (
+                  <Citations citations={t.response.citations} active={act} setActive={setAct} />
+                ) : t.stream?.citations.length ? (
+                  <div className="fade-in">
+                    <Citations citations={t.stream.citations} active={null} setActive={() => {}} />
+                  </div>
+                ) : null}
               </div>
             </section>
           );
