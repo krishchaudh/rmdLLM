@@ -124,7 +124,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        <section className="mt-10 grid gap-8 lg:grid-cols-[1fr_1fr]">
+        <section className="mt-10 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="rounded-xl border border-stone-200 bg-white p-5">
             <div className="flex gap-4 text-sm">
               {(["lecture", "book"] as const).map((t) => (
@@ -136,14 +136,14 @@ export default function AdminPage() {
             <form onSubmit={submit} className="mt-4 space-y-3">
               {tab === "lecture" ? (
                 <>
-                  <div className="flex gap-2">
-                    <input required value={lec.url} onChange={(e) => setLec({ ...lec, url: e.target.value })} placeholder="YouTube URL" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <input required value={lec.url} onChange={(e) => setLec({ ...lec, url: e.target.value })} placeholder="YouTube URL" className="min-w-0 flex-1 rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
                     <button type="button" disabled={fetching || !lec.url} onClick={fetchTranscript} className="shrink-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 hover:border-stone-500 disabled:opacity-50">
                       {fetching ? "Fetching…" : "Fetch transcript"}
                     </button>
                   </div>
                   <input value={lec.title} onChange={(e) => setLec({ ...lec, title: e.target.value })} placeholder="Title (optional)" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
-                  <textarea required value={lec.transcript} onChange={(e) => setLec({ ...lec, transcript: e.target.value })} rows={8} placeholder={"Transcript — click “Fetch transcript”, or on YouTube open “…more → Show transcript”, select all, copy, paste here. Timestamps on their own line are fine:\n0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n…"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                  <textarea required value={lec.transcript} onChange={(e) => setLec({ ...lec, transcript: e.target.value })} rows={8} placeholder={"Paste the transcript (YouTube: “…more → Show transcript”, select all, copy):\n0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n…"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
                   <p className="text-xs text-stone-500">Accepted: YouTube transcript panel (either layout), “M:SS text” lines, SRT, VTT. Ingestion takes about a minute; the Sources list below updates automatically.</p>
                 </>
               ) : (
