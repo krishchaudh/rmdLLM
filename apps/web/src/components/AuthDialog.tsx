@@ -27,6 +27,12 @@ export function AuthDialog() {
 
   if (!authOpen) return null;
 
+  const switchMode = (next: Mode) => {
+    setMode(next);
+    setError(null);
+    setNotice(null);
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -115,15 +121,15 @@ export function AuthDialog() {
         <div className="mt-5 flex items-center justify-between text-[13px] text-stone-500">
           {mode === "signin" ? (
             <>
-              <button type="button" onClick={() => setMode("signup")} className="hover:text-stone-900">
+              <button type="button" onClick={() => switchMode("signup")} className="hover:text-stone-900">
                 Create an account
               </button>
-              <button type="button" onClick={() => setMode("reset")} className="hover:text-stone-900">
+              <button type="button" onClick={() => switchMode("reset")} className="hover:text-stone-900">
                 Forgot password?
               </button>
             </>
           ) : (
-            <button type="button" onClick={() => setMode("signin")} className="hover:text-stone-900">
+            <button type="button" onClick={() => switchMode("signin")} className="hover:text-stone-900">
               ← Back to sign in
             </button>
           )}

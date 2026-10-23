@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { hasDevanagari } from "@/lib/api";
 
 export function Composer({
@@ -18,6 +18,14 @@ export function Composer({
   autoFocus?: boolean;
   large?: boolean;
 }) {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 480px)");
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -45,7 +53,7 @@ export function Composer({
             if (!busy && value.trim()) onSubmit();
           }
         }}
-        placeholder="Ask in English, हिन्दी, or Hinglish…"
+        placeholder={narrow ? "Ask in English or हिन्दी…" : "Ask in English, हिन्दी, or Hinglish…"}
         className={`w-full resize-none overflow-hidden rounded-2xl border border-stone-200 bg-white pr-14 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:shadow-md ${
           large ? "px-5 py-4 text-[17px]" : "px-4 py-3 text-[15px]"
         } ${hasDevanagari(value) ? "devanagari" : ""}`}
