@@ -208,6 +208,9 @@ class Conversation(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
     session_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Supabase auth user id; NULL for guest conversations
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    title: Mapped[str | None] = mapped_column(String(160))
     language: Mapped[str | None] = mapped_column(String(16))
 
     messages: Mapped[list["Message"]] = relationship(

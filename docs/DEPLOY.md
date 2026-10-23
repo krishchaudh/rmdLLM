@@ -35,3 +35,15 @@ Ingestion jobs are dispatched by `INGEST_MODE` (default `auto`): if an RQ worker
 curl https://<api>.onrender.com/ready
 curl -X POST https://<api>.onrender.com/ask -H 'content-type: application/json' -d '{"question":"Why doesn'"'"'t material wealth provide lasting happiness?"}'
 ```
+
+## User accounts (Supabase Auth)
+
+- Supabase dashboard → Authentication → Providers → Email: enabled. For staging, turn off
+  "Confirm email" (the built-in mailer allows ~2 emails/hour). Set Site URL to the web origin
+  and add `<origin>/reset` to Redirect URLs so password-reset links work.
+- API env: `SUPABASE_URL=https://<ref>.supabase.co` (tokens are verified via its JWKS; new
+  projects sign with ES256). Legacy HS256 projects: set `SUPABASE_JWT_SECRET` instead.
+- Web env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable key).
+- Guests keep working without an account; signing in saves conversations (`conversations.user_id`).
+- Rate limits are per IP for guests, per account when signed in, plus a site-wide daily cap
+  (`RATE_LIMIT_ASK_*`). They live in process memory, so they reset on deploy.

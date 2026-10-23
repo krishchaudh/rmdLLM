@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Noto_Sans_Devanagari, Newsreader } from "next/font/google";
 import "./globals.css";
+import { UserProvider } from "@/lib/user";
+import { AuthDialog } from "@/components/AuthDialog";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
 const serif = Newsreader({
@@ -27,7 +29,12 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} ${serif.variable} ${devanagari.variable}`}>
-      <body className="min-h-screen font-sans">{children}</body>
+      <body className="min-h-screen font-sans">
+        <UserProvider>
+          {children}
+          <AuthDialog />
+        </UserProvider>
+      </body>
     </html>
   );
 }
