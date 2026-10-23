@@ -17,7 +17,7 @@ export default function AdminPage() {
   const [tab, setTab] = useState<"lecture" | "book">("lecture");
   const [lec, setLec] = useState({ url: "", title: "", transcript: "" });
   const [fetching, setFetching] = useState(false);
-  const [dup, setDup] = useState<{ source: Source; reason: string } | null>(null);
+  const [dup, setDup] = useState<{ source: Source; reason: string; fromSubmit?: boolean } | null>(null);
   const [replaceDup, setReplaceDup] = useState(false);
   const [book, setBook] = useState<{ title: string; author: string; file: File | null }>({ title: "", author: "", file: null });
   const [busy, setBusy] = useState(false);
@@ -108,7 +108,7 @@ export default function AdminPage() {
     } catch (e2) {
       if (e2 instanceof ApiError && e2.status === 409) {
         const d = e2.detail as { message?: string; source?: Source } | undefined;
-        if (d?.source) setDup({ source: d.source, reason: d.message ?? "already in the bank" });
+        if (d?.source) setDup({ source: d.source, reason: d.message ?? "already in the bank", fromSubmit: true });
         setMsg(null);
       } else setMsg(e2 instanceof Error ? e2.message : "error");
     } finally {
@@ -182,7 +182,7 @@ export default function AdminPage() {
                     </div>
                   )}
                   <input value={lec.title} onChange={(e) => setLec({ ...lec, title: e.target.value })} placeholder="Title (optional)" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
-                  <textarea required value={lec.transcript} onChange={(e) => setLec({ ...lec, transcript: e.target.value })} rows={8} placeholder={"Paste the transcript (YouTube: “…more → Show transcript”, select all, copy):\n0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n…"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                  <textarea required value={lec.transcript} onChange={(e) => { setLec({ ...lec, transcript: e.target.value }); if (dup?.fromSubmit) { setDup(null); setReplaceDup(false); } }} rows={8} placeholder={"Paste the transcript (YouTube: “…more → Show transcript”, select all, copy):\n0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n…"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
                   <p className="text-xs text-stone-500">Accepted: YouTube transcript panel (either layout), “M:SS text” lines, SRT, VTT. Ingestion takes about a minute; the Sources list below updates automatically.</p>
                 </>
               ) : (
