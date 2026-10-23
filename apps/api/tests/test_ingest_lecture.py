@@ -32,7 +32,11 @@ def test_lecture_end_to_end(db):
     # Use a unique fake id so the test does not collide with the real ingested lecture.
     fake_id = "T" + uuid.uuid4().hex[:10]
     source, job = create_lecture_source(
-        db, url=f"https://www.youtube.com/watch?v={fake_id}", transcript=raw, fetch_meta=False
+        db,
+        url=f"https://www.youtube.com/watch?v={fake_id}",
+        transcript=raw,
+        fetch_meta=False,
+        replace=True,
     )
     assert job.status == "queued"
     process_lecture(db, source.id, job.id)
@@ -50,7 +54,7 @@ def test_lecture_end_to_end(db):
     assert all(c.embedding is not None for c in chunks)
     # idempotent: same transcript again → skipped
     _, job2 = create_lecture_source(
-        db, url=f"https://youtu.be/{fake_id}", transcript=raw, fetch_meta=False
+        db, url=f"https://youtu.be/{fake_id}", transcript=raw, fetch_meta=False, replace=True
     )
     assert job2.status == "skipped"
     db.delete(db.get(Source, source.id))

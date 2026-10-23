@@ -17,6 +17,8 @@ export default function AdminPage() {
   const [tab, setTab] = useState<"lecture" | "book">("lecture");
   const [lec, setLec] = useState({ url: "", title: "", transcript: "" });
   const [fetching, setFetching] = useState(false);
+  const [dup, setDup] = useState<{ source: Source; reason: string } | null>(null);
+  const [replaceDup, setReplaceDup] = useState(false);
   const [book, setBook] = useState<{ title: string; author: string; file: File | null }>({ title: "", author: "", file: null });
   const [busy, setBusy] = useState(false);
 
@@ -46,6 +48,22 @@ export default function AdminPage() {
     return () => clearInterval(iv);
   }, [r, refresh]);
 
+  useEffect(() => {
+    setDup(null);
+    setReplaceDup(false);
+    if (!token || tab !== "lecture" || !/[A-Za-z0-9_-]{11}/.test(lec.url)) return;
+    const url = lec.url;
+    const h = setTimeout(async () => {
+      try {
+        const r = await api.admin.lookupLecture(token, url);
+        if (r.existing) setDup({ source: r.existing, reason: r.reason ?? "already in the bank" });
+      } catch {
+        /* lookup is advisory; the server still rejects duplicates on submit */
+      }
+    }, 400);
+    return () => clearTimeout(h);
+  }, [token, tab, lec.url]);
+
   if (!token) return null;
 
   const fetchTranscript = async () => {
@@ -69,7 +87,12 @@ export default function AdminPage() {
     setMsg(null);
     try {
       if (tab === "lecture") {
-        await api.admin.addLecture(token, { url: lec.url, transcript: lec.transcript, title: lec.title || undefined });
+        await api.admin.addLecture(token, {
+          url: lec.url,
+          transcript: lec.transcript,
+          title: lec.title || undefined,
+          replace: replaceDup || undefined,
+        });
         setLec({ url: "", title: "", transcript: "" });
       } else {
         if (!book.file) throw new Error("Choose a PDF");
@@ -83,7 +106,11 @@ export default function AdminPage() {
       setMsg("Ingestion started — status updates below (about a minute for a lecture, ~1 hr for a book).");
       refresh(token);
     } catch (e2) {
-      setMsg(e2 instanceof Error ? e2.message : "error");
+      if (e2 instanceof ApiError && e2.status === 409) {
+        const d = e2.detail as { message?: string; source?: Source } | undefined;
+        if (d?.source) setDup({ source: d.source, reason: d.message ?? "already in the bank" });
+        setMsg(null);
+      } else setMsg(e2 instanceof Error ? e2.message : "error");
     } finally {
       setBusy(false);
     }
@@ -142,6 +169,18 @@ export default function AdminPage() {
                       {fetching ? "Fetching…" : "Fetch transcript"}
                     </button>
                   </div>
+                  {dup && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      <p>
+                        <span className="font-medium">Already in the bank:</span> {dup.reason}
+                        {dup.source.chunk_count > 0 && ` · ${dup.source.chunk_count} passages`}
+                      </p>
+                      <label className="mt-2 flex items-center gap-2 text-xs text-amber-800">
+                        <input type="checkbox" checked={replaceDup} onChange={(e) => setReplaceDup(e.target.checked)} />
+                        Replace its transcript with the one pasted below (re-indexes that lecture)
+                      </label>
+                    </div>
+                  )}
                   <input value={lec.title} onChange={(e) => setLec({ ...lec, title: e.target.value })} placeholder="Title (optional)" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
                   <textarea required value={lec.transcript} onChange={(e) => setLec({ ...lec, transcript: e.target.value })} rows={8} placeholder={"Paste the transcript (YouTube: “…more → Show transcript”, select all, copy):\n0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n…"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
                   <p className="text-xs text-stone-500">Accepted: YouTube transcript panel (either layout), “M:SS text” lines, SRT, VTT. Ingestion takes about a minute; the Sources list below updates automatically.</p>
@@ -153,8 +192,8 @@ export default function AdminPage() {
                   <input required type="file" accept="application/pdf" onChange={(e) => setBook({ ...book, file: e.target.files?.[0] ?? null })} className="block w-full text-sm text-stone-600" />
                 </>
               )}
-              <button disabled={busy} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50">
-                {busy ? "Submitting…" : "Ingest"}
+              <button disabled={busy || (tab === "lecture" && !!dup && !replaceDup)} className="rounded-lg bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-orange-700 disabled:opacity-50">
+                {busy ? "Submitting…" : tab === "lecture" && dup && replaceDup ? "Replace & re-index" : "Ingest"}
               </button>
               {msg && <p className="text-sm text-stone-600">{msg}</p>}
             </form>

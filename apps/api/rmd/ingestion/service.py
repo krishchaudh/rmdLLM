@@ -7,7 +7,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from rmd.config import get_settings
@@ -29,6 +29,37 @@ class IngestionError(Exception):
     pass
 
 
+class DuplicateLectureError(IngestionError):
+    """The video (or this exact transcript) is already in the bank."""
+
+    def __init__(self, source: Source, reason: str):
+        super().__init__(reason)
+        self.source = source
+
+
+def find_existing_lecture(
+    db: Session, *, video_id: str, transcript: str | None = None
+) -> tuple[Source, str] | None:
+    """Return (source, reason) when this video, or this transcript under another video, already exists."""
+    lecture = db.scalar(select(Lecture).where(Lecture.youtube_id == video_id))
+    if lecture is not None:
+        source = db.get(Source, lecture.source_id)
+        assert source is not None
+        return source, f"this video is already in the bank as “{source.title}” ({source.status})"
+    if transcript:
+        digest = hashlib.md5(transcript.encode()).hexdigest()
+        lecture = db.scalar(select(Lecture).where(func.md5(Lecture.raw_transcript) == digest))
+        if lecture is not None:
+            source = db.get(Source, lecture.source_id)
+            assert source is not None
+            return (
+                source,
+                f"this exact transcript is already in the bank as “{source.title}” "
+                f"(video {lecture.youtube_id}, {source.status})",
+            )
+    return None
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -42,7 +73,9 @@ def create_lecture_source(
     title: str | None = None,
     language: str = "hi",
     fetch_meta: bool = True,
+    replace: bool = False,
 ) -> tuple[Source, IngestionJob]:
+    """Create a lecture source + queued job. Raises DuplicateLectureError unless `replace` is set."""
     video_id = extract_video_id(url)
     if not video_id:
         raise IngestionError("could not extract a YouTube video id from the URL")
@@ -50,6 +83,10 @@ def create_lecture_source(
     if not parsed.segments:
         reasons = "; ".join(f"line {i.line_number}: {i.reason}" for i in parsed.issues[:5])
         raise IngestionError(f"transcript could not be parsed ({reasons})")
+
+    dup = find_existing_lecture(db, video_id=video_id, transcript=transcript)
+    if dup is not None and not replace:
+        raise DuplicateLectureError(dup[0], dup[1])
 
     content_hash = hashlib.sha256((video_id + "\n" + transcript).encode()).hexdigest()
     existing = db.scalar(select(Lecture).where(Lecture.youtube_id == video_id))

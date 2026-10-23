@@ -77,9 +77,11 @@ export type Page = {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  detail: unknown;
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -90,13 +92,15 @@ async function request<T>(path: string, init: RequestInit = {}, token?: string |
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store" });
   if (!res.ok) {
     let detail = res.statusText;
+    let raw: unknown;
     try {
       const j = await res.json();
-      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j);
+      raw = j.detail ?? j;
+      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(raw);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, raw);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
@@ -122,13 +126,15 @@ async function askStream(
   });
   if (!res.ok || !res.body) {
     let detail = res.statusText;
+    let raw: unknown;
     try {
       const j = await res.json();
-      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail ?? j);
+      raw = j.detail ?? j;
+      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(raw);
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, raw);
   }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
@@ -187,8 +193,14 @@ export const api = {
         { method: "POST", body: JSON.stringify({ url }) },
         t,
       ),
-    addLecture: (t: string, body: { url: string; transcript: string; title?: string }) =>
+    addLecture: (t: string, body: { url: string; transcript: string; title?: string; replace?: boolean }) =>
       request("/admin/lectures", { method: "POST", body: JSON.stringify(body) }, t),
+    lookupLecture: (t: string, url: string) =>
+      request<{ video_id: string; existing: Source | null; reason: string | null }>(
+        `/admin/lectures/lookup?url=${encodeURIComponent(url)}`,
+        {},
+        t,
+      ),
     uploadBook: (t: string, form: FormData) =>
       request("/admin/books", { method: "POST", body: form }, t),
     reprocess: (t: string, id: string) =>
