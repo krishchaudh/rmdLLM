@@ -51,6 +51,13 @@ class LectureCreate(BaseModel):
     transcript: str = Field(min_length=5, max_length=2_000_000)
     title: str | None = Field(default=None, max_length=512)
     language: str = Field(default="hi", max_length=16)
+    replace: bool = False
+
+
+class LectureLookupOut(BaseModel):
+    video_id: str
+    existing: SourceOut | None = None
+    reason: str | None = None
 
 
 class TranscriptFetchIn(BaseModel):

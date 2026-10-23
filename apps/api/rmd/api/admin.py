@@ -11,6 +11,7 @@ from rmd.api.schemas import (
     IngestAccepted,
     JobOut,
     LectureCreate,
+    LectureLookupOut,
     PageOut,
     TranscriptFetchIn,
     TranscriptFetchOut,
@@ -18,7 +19,13 @@ from rmd.api.schemas import (
 from rmd.api.sources import source_to_out
 from rmd.config import get_settings
 from rmd.db import get_db
-from rmd.ingestion.service import IngestionError, create_book_source, create_lecture_source
+from rmd.ingestion.service import (
+    DuplicateLectureError,
+    IngestionError,
+    create_book_source,
+    create_lecture_source,
+    find_existing_lecture,
+)
 from rmd.ingestion.youtube import TranscriptFetchError, extract_video_id, fetch_transcript
 from rmd.models import Feedback, IngestionJob, Message, Page, Source
 from rmd.worker import enqueue_ingestion
@@ -43,12 +50,34 @@ def _dispatch(source: Source, job: IngestionJob, **kwargs) -> None:
 def add_lecture(body: LectureCreate, db: Session = Depends(get_db)):
     try:
         source, job = create_lecture_source(
-            db, url=body.url, transcript=body.transcript, title=body.title, language=body.language
+            db,
+            url=body.url,
+            transcript=body.transcript,
+            title=body.title,
+            language=body.language,
+            replace=body.replace,
         )
+    except DuplicateLectureError as exc:
+        raise HTTPException(
+            409,
+            {"message": str(exc), "source": source_to_out(exc.source).model_dump(mode="json")},
+        ) from exc
     except IngestionError as exc:
         raise HTTPException(400, str(exc)) from exc
     _dispatch(source, job)
     return IngestAccepted(source=source_to_out(source), job=_job_out(job))
+
+
+@router.get("/lectures/lookup", response_model=LectureLookupOut)
+def lookup_lecture(url: str, db: Session = Depends(get_db)):
+    """Tell the admin up front whether this video is already in the bank."""
+    video_id = extract_video_id(url)
+    if not video_id:
+        raise HTTPException(400, "could not extract a YouTube video id from the URL")
+    dup = find_existing_lecture(db, video_id=video_id)
+    if dup is None:
+        return LectureLookupOut(video_id=video_id)
+    return LectureLookupOut(video_id=video_id, existing=source_to_out(dup[0]), reason=dup[1])
 
 
 @router.post("/lectures/transcript", response_model=TranscriptFetchOut)
