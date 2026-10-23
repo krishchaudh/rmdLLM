@@ -85,3 +85,25 @@ def test_real_transcript_file():
     by_start = {s.start_seconds: s.text for s in result.segments}
     assert by_start[316].startswith("अच्छा बताओ जब से तुम पैदा हुए")
     assert by_start[941].startswith("तो प्रहलाद ने कहा")
+
+
+def test_panel_alternating_lines_format():
+    raw = "0:00\nदो प्रकार के कर्म होते हैं।\n0:05\nएक भौतिक, एक आध्यात्मिक\n1:23\nअर्थात दिव्य कर्म\nगुणातीत कर्म\n"
+    res = parse_transcript(raw)
+    assert res.format == "youtube_panel_lines"
+    assert not res.issues
+    assert [(s.start_seconds, s.end_seconds, s.text) for s in res.segments] == [
+        (0, 5, "दो प्रकार के कर्म होते हैं।"),
+        (5, 83, "एक भौतिक, एक आध्यात्मिक"),
+        (83, None, "अर्थात दिव्य कर्म गुणातीत कर्म"),
+    ]
+
+
+def test_panel_alternating_lines_reports_orphans():
+    res = parse_transcript("hello\n0:10\n0:20\ntext\n")
+    assert res.format == "youtube_panel_lines"
+    assert [i.reason for i in res.issues] == [
+        "caption text before any timestamp",
+        "timestamp without caption text",
+    ]
+    assert len(res.segments) == 1 and res.segments[0].start_seconds == 20

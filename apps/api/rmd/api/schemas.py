@@ -53,6 +53,17 @@ class LectureCreate(BaseModel):
     language: str = Field(default="hi", max_length=16)
 
 
+class TranscriptFetchIn(BaseModel):
+    url: str = Field(min_length=5, max_length=512)
+
+
+class TranscriptFetchOut(BaseModel):
+    video_id: str
+    language: str
+    transcript: str
+    segments: int
+
+
 class IngestAccepted(BaseModel):
     source: SourceOut
     job: JobOut

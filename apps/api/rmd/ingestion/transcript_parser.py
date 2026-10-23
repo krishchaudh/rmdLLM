@@ -11,7 +11,9 @@ The compact time (``M:SS`` or ``H:MM:SS``) is immediately followed by its spoken
 (``N minutes, N seconds`` / ``N hour, ...``) and then the caption text. Both forms are parsed and must
 agree; disagreement or an unparseable line is reported explicitly — a timestamp is never guessed.
 
-Standard formats (``M:SS text``, SRT, VTT) are accepted as well for future ingestion paths.
+The current YouTube panel copies as alternating lines instead (timestamp on its own line, caption
+on the next): ``0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n...``. Standard formats (``M:SS text``, SRT,
+VTT) are accepted as well.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ _WORD_TIME = re.compile(
 )
 _COMPACT = re.compile(r"^(?P<time>\d{1,2}:\d{2}(?::\d{2})?)")
 _SIMPLE = re.compile(r"^(?P<time>\d{1,2}:\d{2}(?::\d{2})?)[\s\-–>]+(?P<text>\S.*)$")
+_TIME_ONLY = re.compile(r"^\d{1,2}:\d{2}(?::\d{2})?$")
 _SRT_TS = re.compile(
     r"^(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})"
 )
@@ -145,7 +148,46 @@ def _detect_format(lines: list[str]) -> str:
         return "youtube_panel"
     if sum(1 for ln in stripped if _SIMPLE.match(ln)) >= max(1, len(stripped) // 2):
         return "simple"
+    time_only = sum(1 for ln in stripped if _TIME_ONLY.match(ln))
+    if time_only >= 2 and time_only >= len(stripped) // 3:
+        return "youtube_panel_lines"
     return "unknown"
+
+
+def _parse_panel_lines(lines: list[str]) -> ParseResult:
+    """Alternating-line panel format: a bare timestamp line followed by its caption line(s)."""
+    result = ParseResult(format="youtube_panel_lines")
+    pending: tuple[int, str, int] | None = None
+    buf: list[str] = []
+
+    def flush() -> None:
+        nonlocal pending, buf
+        if pending is None:
+            return
+        start, raw, line_no = pending
+        text = " ".join(buf).strip()
+        if text:
+            result.segments.append(Segment(start, text, raw, None, line_no))
+        else:
+            result.issues.append(ParseIssue(line_no, raw, "timestamp without caption text"))
+        pending, buf = None, []
+
+    for idx, ln in enumerate(lines, start=1):
+        s = ln.strip()
+        if not s:
+            continue
+        if _TIME_ONLY.match(s):
+            flush()
+            try:
+                pending = (_compact_to_seconds(s), s, idx)
+            except TranscriptParseError as exc:
+                result.issues.append(ParseIssue(idx, s, str(exc)))
+        elif pending is None:
+            result.issues.append(ParseIssue(idx, s, "caption text before any timestamp"))
+        else:
+            buf.append(s)
+    flush()
+    return result
 
 
 def _parse_srt_vtt(lines: list[str], fmt: str) -> ParseResult:
@@ -180,6 +222,8 @@ def parse_transcript(raw: str) -> ParseResult:
         return ParseResult(format=fmt, issues=[ParseIssue(0, "", "transcript is empty")])
     if fmt in ("srt", "vtt"):
         result = _parse_srt_vtt(lines, fmt)
+    elif fmt == "youtube_panel_lines":
+        result = _parse_panel_lines(lines)
     else:
         result = ParseResult(format=fmt)
         for idx, ln in enumerate(lines, start=1):

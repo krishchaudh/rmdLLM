@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [tab, setTab] = useState<"lecture" | "book">("lecture");
   const [lec, setLec] = useState({ url: "", title: "", transcript: "" });
+  const [fetching, setFetching] = useState(false);
   const [book, setBook] = useState<{ title: string; author: string; file: File | null }>({ title: "", author: "", file: null });
   const [busy, setBusy] = useState(false);
 
@@ -47,6 +48,21 @@ export default function AdminPage() {
 
   if (!token) return null;
 
+  const fetchTranscript = async () => {
+    if (!token) return;
+    setFetching(true);
+    setMsg(null);
+    try {
+      const r = await api.admin.fetchTranscript(token, lec.url);
+      setLec((l) => ({ ...l, transcript: r.transcript }));
+      setMsg(`Fetched ${r.segments} caption lines (${r.language}). Review, then click Ingest.`);
+    } catch (e2) {
+      setMsg(e2 instanceof Error ? e2.message : "Could not fetch transcript — paste it manually.");
+    } finally {
+      setFetching(false);
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -64,7 +80,7 @@ export default function AdminPage() {
         await api.admin.uploadBook(token, fd);
         setBook({ title: "", author: "", file: null });
       }
-      setMsg("Queued for ingestion.");
+      setMsg("Ingestion started — status updates below (about a minute for a lecture, ~1 hr for a book).");
       refresh(token);
     } catch (e2) {
       setMsg(e2 instanceof Error ? e2.message : "error");
@@ -120,9 +136,15 @@ export default function AdminPage() {
             <form onSubmit={submit} className="mt-4 space-y-3">
               {tab === "lecture" ? (
                 <>
-                  <input required value={lec.url} onChange={(e) => setLec({ ...lec, url: e.target.value })} placeholder="YouTube URL" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                  <div className="flex gap-2">
+                    <input required value={lec.url} onChange={(e) => setLec({ ...lec, url: e.target.value })} placeholder="YouTube URL" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                    <button type="button" disabled={fetching || !lec.url} onClick={fetchTranscript} className="shrink-0 rounded-lg border border-stone-300 px-3 py-2 text-sm text-stone-700 hover:border-stone-500 disabled:opacity-50">
+                      {fetching ? "Fetching…" : "Fetch transcript"}
+                    </button>
+                  </div>
                   <input value={lec.title} onChange={(e) => setLec({ ...lec, title: e.target.value })} placeholder="Title (optional)" className="w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
-                  <textarea required value={lec.transcript} onChange={(e) => setLec({ ...lec, transcript: e.target.value })} rows={8} placeholder={"Paste transcript, e.g.\n0:000 secondsदो प्रकार के कर्म होते हैं।"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                  <textarea required value={lec.transcript} onChange={(e) => setLec({ ...lec, transcript: e.target.value })} rows={8} placeholder={"Transcript — click “Fetch transcript”, or on YouTube open “…more → Show transcript”, select all, copy, paste here. Timestamps on their own line are fine:\n0:00\nदो प्रकार के कर्म होते हैं।\n0:05\n…"} className="devanagari w-full rounded-lg border border-stone-200 px-3 py-2 text-sm outline-none focus:border-stone-400" />
+                  <p className="text-xs text-stone-500">Accepted: YouTube transcript panel (either layout), “M:SS text” lines, SRT, VTT. Ingestion takes about a minute; the Sources list below updates automatically.</p>
                 </>
               ) : (
                 <>

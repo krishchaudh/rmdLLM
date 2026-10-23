@@ -181,6 +181,12 @@ export const api = {
   admin: {
     jobs: (t: string) => request<Job[]>("/admin/jobs", {}, t),
     stats: (t: string) => request<Record<string, unknown>>("/admin/stats", {}, t),
+    fetchTranscript: (t: string, url: string) =>
+      request<{ video_id: string; language: string; transcript: string; segments: number }>(
+        "/admin/lectures/transcript",
+        { method: "POST", body: JSON.stringify({ url }) },
+        t,
+      ),
     addLecture: (t: string, body: { url: string; transcript: string; title?: string }) =>
       request("/admin/lectures", { method: "POST", body: JSON.stringify(body) }, t),
     uploadBook: (t: string, form: FormData) =>

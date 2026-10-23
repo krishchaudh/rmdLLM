@@ -7,11 +7,19 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from rmd.api.auth import require_admin
-from rmd.api.schemas import IngestAccepted, JobOut, LectureCreate, PageOut
+from rmd.api.schemas import (
+    IngestAccepted,
+    JobOut,
+    LectureCreate,
+    PageOut,
+    TranscriptFetchIn,
+    TranscriptFetchOut,
+)
 from rmd.api.sources import source_to_out
 from rmd.config import get_settings
 from rmd.db import get_db
 from rmd.ingestion.service import IngestionError, create_book_source, create_lecture_source
+from rmd.ingestion.youtube import TranscriptFetchError, extract_video_id, fetch_transcript
 from rmd.models import Feedback, IngestionJob, Message, Page, Source
 from rmd.worker import enqueue_ingestion
 
@@ -41,6 +49,24 @@ def add_lecture(body: LectureCreate, db: Session = Depends(get_db)):
         raise HTTPException(400, str(exc)) from exc
     _dispatch(source, job)
     return IngestAccepted(source=source_to_out(source), job=_job_out(job))
+
+
+@router.post("/lectures/transcript", response_model=TranscriptFetchOut)
+def fetch_lecture_transcript(body: TranscriptFetchIn):
+    """Best-effort caption fetch so the admin can skip pasting. 502 when YouTube refuses."""
+    video_id = extract_video_id(body.url)
+    if not video_id:
+        raise HTTPException(400, "could not extract a YouTube video id from the URL")
+    try:
+        transcript, language = fetch_transcript(video_id)
+    except TranscriptFetchError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return TranscriptFetchOut(
+        video_id=video_id,
+        language=language,
+        transcript=transcript,
+        segments=transcript.count("\n") + 1,
+    )
 
 
 @router.post("/books", response_model=IngestAccepted, status_code=202)
