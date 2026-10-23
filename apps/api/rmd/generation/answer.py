@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from rmd.config import get_settings
+from rmd.generation.condense import condense_question, needs_context
 from rmd.generation.prompts import (
     SYSTEM_ANSWER,
     SYSTEM_REVISE,
@@ -84,6 +85,7 @@ class Answer:
     estimated_cost_usd: float = 0.0
     model: str = ""
     translated_query: str | None = None
+    standalone_query: str | None = None
 
 
 class TokenStreamer:
@@ -157,7 +159,11 @@ def answer_question(
 
     emit({"type": "status", "stage": "retrieval"})
     t = time.perf_counter()
-    rr = retrieve(db, question, k=k, mode=mode)
+    standalone: str | None = None
+    if history and needs_context(question, history):
+        standalone, cu = condense_question(question, history)
+        _accumulate(usage, cu, "condense")
+    rr = retrieve(db, standalone or question, k=k, mode=mode)
     lat["retrieval_ms"] = round((time.perf_counter() - t) * 1000, 1)
     _accumulate(usage, rr.usage, "embedding")
     if rr.translated_query:
@@ -177,6 +183,7 @@ def answer_question(
             language=lang,
             retrieval_mode=mode,
             translated_query=rr.translated_query,
+            standalone_query=standalone,
             latency_ms=lat,
             usage=usage,
             model=s.generation_model,
@@ -232,6 +239,7 @@ def answer_question(
             language=lang,
             retrieval_mode=mode,
             translated_query=rr.translated_query,
+            standalone_query=standalone,
             latency_ms=lat,
             usage=usage,
             estimated_cost_usd=_cost(usage),
@@ -289,6 +297,7 @@ def answer_question(
                     language=lang,
                     retrieval_mode=mode,
                     translated_query=rr.translated_query,
+                    standalone_query=standalone,
                     latency_ms=lat,
                     usage=usage,
                     estimated_cost_usd=_cost(usage),
@@ -310,6 +319,7 @@ def answer_question(
             language=lang,
             retrieval_mode=mode,
             translated_query=rr.translated_query,
+            standalone_query=standalone,
             latency_ms=lat,
             usage=usage,
             estimated_cost_usd=_cost(usage),
@@ -325,6 +335,7 @@ def answer_question(
         language=lang,
         retrieval_mode=mode,
         translated_query=rr.translated_query,
+        standalone_query=standalone,
         latency_ms=lat,
         usage=usage,
         estimated_cost_usd=_cost(usage),
