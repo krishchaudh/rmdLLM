@@ -190,9 +190,18 @@ def answer_question(
             + "\n".join(f"{m['role']}: {m['content'][:500]}" for m in history[-6:])
         )
     lang_rule = _LANG_RULE[lang]
+    lecture_ns = [c["n"] for c in citations if c["kind"] == "lecture"]
+    lecture_note = ""
+    if lecture_ns and len(lecture_ns) < len(citations):
+        tags = "".join(f"[{n}]" for n in lecture_ns)
+        lecture_note = (
+            f"\n\nNOTE: passage(s) {tags} are from the spoken lecture. Where one of them supports a "
+            "point you make, cite it together with the book passage (rule 7)."
+        )
     user_msg = (
         f"SOURCE PASSAGES:\n{passages_block}{convo}\n\nQUESTION: {question}\n\n"
         f"ANSWER LANGUAGE: {lang_rule} (decided from THIS question, not from earlier turns)"
+        f"{lecture_note}"
     )
 
     emit({"type": "status", "stage": "generation"})

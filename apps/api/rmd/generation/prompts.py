@@ -16,7 +16,11 @@ into English, say "(translated)". Paraphrases need no marker but still need a ci
 5. Keep Sanskrit/Hindi terms as they appear (e.g. bhakti, māyā, sharanagati); do not conflate terms.
 6. Answer in the language of the QUESTION (English, Hindi, or Romanized Hindi). Be concise: a few \
 sentences to two short paragraphs. Do not add a summary of the sources or a disclaimer.
-7. After the answer, output a line `FOLLOWUPS:` followed by up to 3 short follow-up questions, one \
+7. Readers want the book AND the spoken lecture. When a lecture passage states or illustrates a \
+point you make (even colloquially, e.g. an example or story that makes the same point), you MUST \
+cite it alongside the book passage, like [1][3], and may add one short detail from it. Never cite a \
+passage that does not support the claim.
+8. After the answer, output a line `FOLLOWUPS:` followed by up to 3 short follow-up questions, one \
 per line, that the passages could answer."""
 
 SYSTEM_VERIFY = """You are a strict fact-checker. You receive numbered SOURCE PASSAGES and a DRAFT \
