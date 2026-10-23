@@ -7,6 +7,16 @@ in cited source material (scanned books and Hindi lecture transcripts) — never
 - API: `apps/api` (FastAPI, SQLAlchemy, Alembic, pgvector)
 - Web: `apps/web` (Next.js 14, TypeScript, Tailwind)
 
+## Demo
+
+Live staging: https://rmdllm.krishchaudhary.me
+
+Guest question → create account → chat saved to the account → follow-ups → reload → rename/delete → sign out → delete all → delete account → mobile:
+
+[![Account & history demo](docs/demo/accounts-poster.png)](docs/demo/accounts-demo.mp4)
+
+▶ [Watch the demo (3½ min)](docs/demo/accounts-demo.mp4)
+
 ## Quick start
 ```
 cp .env.example .env
