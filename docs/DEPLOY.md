@@ -28,7 +28,7 @@ Or via the admin UI once deployed (PDF upload → background job; needs the work
 3. Deploy; then put the Vercel URL into Render's `CORS_ORIGINS` (JSON list) and redeploy the api.
 
 ## Worker
-Background ingestion jobs (`rmd.worker`) need a Render **Background Worker** (paid, ~$7/mo). On free tier run the worker locally against the Neon URL, or use `scripts/ingest.py` which ingests synchronously.
+Ingestion jobs are dispatched by `INGEST_MODE` (default `auto`): if an RQ worker (`python -m rmd.worker`, a Render **Background Worker**, ~$7/mo) is listening on Redis the job goes there; otherwise it runs in a background thread of the API process. On the free tier that means admin "Add lecture" works out of the box (~1 min); a full book OCR (~1 hr) is better run with `scripts/ingest.py` or a worker because the free API instance can be put to sleep mid-job.
 
 ## Smoke test
 ```

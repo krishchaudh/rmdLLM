@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     database_url: str = "postgresql+psycopg://rmd:rmd@localhost:5433/rmd"
     redis_url: str = "redis://localhost:6380/0"
+    # auto: use the RQ worker when one is listening, otherwise run jobs in-process (free tier)
+    ingest_mode: Literal["auto", "inline", "rq"] = "auto"
     upload_dir: str = "./data/uploads"
     cors_origins: Annotated[list[str], NoDecode] = Field(
         default_factory=lambda: ["http://localhost:3000"]

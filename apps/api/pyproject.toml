@@ -29,6 +29,7 @@ dependencies = [
     "numpy>=1.26,<3",
     "opencv-python-headless>=4.9,<5",
     "tiktoken>=0.7,<1",
+    "youtube-transcript-api>=1.0,<2",
 ]
 
 [project.optional-dependencies]

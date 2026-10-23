@@ -59,3 +59,56 @@ def fetch_metadata(video_id: str, timeout: float = 5.0) -> VideoMetadata:
         )
     except Exception:  # noqa: BLE001
         return VideoMetadata(status="unavailable")
+
+
+class TranscriptFetchError(Exception):
+    pass
+
+
+def _fmt_time(seconds: float) -> str:
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, sec = divmod(rem, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
+def fetch_transcript(video_id: str, languages: tuple[str, ...] = ("hi", "en")) -> tuple[str, str]:
+    """Fetch YouTube captions and return (``M:SS text`` lines, language code).
+
+    Best effort: YouTube blocks most cloud IPs, so callers must offer manual paste as a fallback.
+    """
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api._errors import (
+            NoTranscriptFound,
+            TranscriptsDisabled,
+            VideoUnavailable,
+        )
+    except ImportError as exc:  # pragma: no cover
+        raise TranscriptFetchError("transcript fetching is not installed") from exc
+    try:
+        api = YouTubeTranscriptApi()
+        listing = api.list(video_id)
+        try:
+            transcript = listing.find_transcript(list(languages))
+        except NoTranscriptFound:
+            transcript = next(iter(listing))
+        fetched = transcript.fetch()
+    except (TranscriptsDisabled, VideoUnavailable) as exc:
+        raise TranscriptFetchError("this video has no captions available") from exc
+    except Exception as exc:  # noqa: BLE001
+        name = type(exc).__name__
+        if name in ("IpBlocked", "RequestBlocked"):
+            raise TranscriptFetchError(
+                "YouTube blocked the server's request (cloud IPs are often blocked). "
+                "Open the video, click “Show transcript”, copy it and paste it below."
+            ) from exc
+        raise TranscriptFetchError(f"could not fetch captions ({name})") from exc
+    lines = [
+        f"{_fmt_time(snip.start)} {' '.join(snip.text.split())}"
+        for snip in fetched
+        if snip.text.strip()
+    ]
+    if not lines:
+        raise TranscriptFetchError("captions were empty")
+    return "\n".join(lines), fetched.language_code
