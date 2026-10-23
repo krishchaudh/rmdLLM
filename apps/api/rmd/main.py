@@ -6,10 +6,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from rmd.api import admin, auth, chat, health, sources
+from rmd.api import admin, auth, chat, health, me, sources
 from rmd.config import get_settings
 from rmd.logging import configure_logging, get_logger
 
@@ -26,7 +25,21 @@ app = FastAPI(
     redoc_url=None,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+def _rate_limited(request: Request, exc: RateLimitExceeded):
+    detail = exc.detail or ""
+    if "day" in detail:
+        msg = "You've reached today's question limit."
+        if not request.headers.get("authorization"):
+            msg += " Sign in for a higher daily limit, or come back tomorrow."
+    else:
+        msg = "Too many questions at once — please wait a minute and try again."
+    resp = JSONResponse({"detail": msg, "limit": detail}, status_code=429)
+    return request.app.state.limiter._inject_headers(resp, request.state.view_rate_limit)
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limited)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -68,3 +81,4 @@ app.include_router(auth.router)
 app.include_router(sources.router)
 app.include_router(admin.router)
 app.include_router(chat.router)
+app.include_router(me.router)

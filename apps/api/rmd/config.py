@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-to-a-long-random-string"
     jwt_expire_minutes: int = 720
 
+    # End-user accounts (Supabase Auth). Tokens are verified against the project's JWKS
+    # (asymmetric keys) or, for legacy projects, the shared JWT secret.
+    supabase_url: str = ""
+    supabase_jwt_secret: str = ""
+
     llm_provider: Literal["openai", "mock"] = "openai"
     embedding_provider: Literal["openai", "mock"] = "openai"
     openai_api_key: str = ""
@@ -36,7 +41,10 @@ class Settings(BaseSettings):
     kind_floor: int = 3
     verification_model: str = "gpt-4.1-mini"
 
-    rate_limit_ask: str = "20/minute"
+    rate_limit_ask: str = "20/minute"  # per IP / per account burst limit
+    rate_limit_ask_guest_daily: str = "40/day"  # per IP, not signed in
+    rate_limit_ask_user_daily: str = "300/day"  # per account
+    rate_limit_ask_global_daily: str = "3000/day"  # whole site, cost safety net
     max_upload_mb: int = 200
 
     @field_validator("cors_origins", mode="before")

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, type Citation, hasDevanagari, type AskResponse } from "@/lib/api";
+import { api, type Citation, hasDevanagari, type AskResponse, type StoredMessage } from "@/lib/api";
+import { useUser } from "@/lib/user";
 import { Answer, StreamingAnswer } from "./Answer";
 import { Citations } from "./Citations";
 import { Composer } from "./Composer";
@@ -25,8 +26,45 @@ const SUGGESTIONS = [
 
 const STORAGE_KEY = "rmd.chat.v1";
 
-export function Chat() {
+function turnsFromMessages(msgs: StoredMessage[], conversationId: string): Turn[] {
+  const out: Turn[] = [];
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i];
+    if (m.role !== "user") continue;
+    const a = msgs[i + 1]?.role === "assistant" ? msgs[i + 1] : null;
+    out.push({
+      id: m.id,
+      question: m.content,
+      response: a
+        ? {
+            conversation_id: conversationId,
+            message_id: a.id,
+            answer: a.content,
+            abstained: a.abstained,
+            citations: a.citations ?? [],
+            followups: a.followups ?? [],
+            language: "",
+            latency_ms: {},
+            verification_summary: {},
+          }
+        : undefined,
+      error: a ? undefined : "No answer was saved for this question.",
+    });
+  }
+  return out;
+}
+
+type ChatProps = {
+  /** Set by the history sidebar: open a saved conversation (id) or start a new one (null). */
+  openRequest?: { id: string | null; nonce: number };
+  onConversationChange?: (id: string | null) => void;
+  onHistoryChanged?: () => void;
+};
+
+export function Chat({ openRequest, onConversationChange, onHistoryChanged }: ChatProps) {
+  const { user, getToken, enabled, openAuth } = useUser();
   const [turns, setTurns] = useState<Turn[]>([]);
+  const [loadingConv, setLoadingConv] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -57,12 +95,66 @@ export function Chat() {
     if (busy) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length, busy]);
 
+  useEffect(() => {
+    onConversationChange?.(conversationId);
+  }, [conversationId, onConversationChange]);
+
   const reset = () => {
     setTurns([]);
     setConversationId(null);
     setActive(null);
     sessionStorage.removeItem(STORAGE_KEY);
   };
+
+  // Sidebar requests: open a saved conversation or start fresh.
+  const lastNonce = useRef(0);
+  useEffect(() => {
+    if (!openRequest || openRequest.nonce === lastNonce.current) return;
+    lastNonce.current = openRequest.nonce;
+    if (!openRequest.id) {
+      reset();
+      return;
+    }
+    const id = openRequest.id;
+    let cancelled = false;
+    (async () => {
+      setLoadingConv(true);
+      try {
+        const t = await getToken();
+        const conv = await api.conversation(id, t);
+        if (cancelled) return;
+        setTurns(turnsFromMessages(conv.messages, conv.id));
+        setConversationId(conv.id);
+        setActive(null);
+        window.scrollTo({ top: 0 });
+      } catch {
+        if (!cancelled) reset();
+      } finally {
+        if (!cancelled) setLoadingConv(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest]);
+
+  // Signing in mid-chat: adopt the guest conversation into the account.
+  const claimedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!user || !conversationId || claimedFor.current === conversationId) return;
+    claimedFor.current = conversationId;
+    (async () => {
+      const t = await getToken();
+      if (!t) return;
+      try {
+        await api.me.claim(t, conversationId);
+        onHistoryChanged?.();
+      } catch {
+        /* already owned by this account, or gone */
+      }
+    })();
+  }, [user, conversationId, getToken, onHistoryChanged]);
 
   const ask = async (q: string) => {
     const id = crypto.randomUUID();
@@ -82,15 +174,25 @@ export function Chat() {
       const schedule = () => {
         if (!raf) raf = requestAnimationFrame(flush);
       };
-      const r = await api.askStream(q, conversationId, (ev) => {
-        if (ev.type === "status") cur = { ...cur, stage: ev.stage };
-        else if (ev.type === "token") cur = { ...cur, text: cur.text + ev.text };
-        else if (ev.type === "citations") cur = { ...cur, citations: ev.citations };
-        else return;
-        schedule();
-      });
+      const token = await getToken();
+      const r = await api.askStream(
+        q,
+        conversationId,
+        (ev) => {
+          if (ev.type === "status") cur = { ...cur, stage: ev.stage };
+          else if (ev.type === "token") cur = { ...cur, text: cur.text + ev.text };
+          else if (ev.type === "citations") cur = { ...cur, citations: ev.citations };
+          else return;
+          schedule();
+        },
+        token,
+      );
       if (raf) cancelAnimationFrame(raf);
       setConversationId(r.conversation_id);
+      if (token) {
+        claimedFor.current = r.conversation_id;
+        onHistoryChanged?.();
+      }
       // Keep the typewriter until it has caught up, then hand off to the final Answer.
       const finalStream = { ...cur, text: r.answer, citations: r.citations, final: true };
       setTurns((t) => t.map((x) => (x.id === id ? { ...x, response: r, stream: finalStream } : x)));
@@ -101,6 +203,14 @@ export function Chat() {
       setBusy(false);
     }
   };
+
+  if (loadingConv) {
+    return (
+      <main className="mx-auto flex min-h-[calc(100vh-3.5rem)] max-w-2xl items-center justify-center px-5">
+        <p className="fade-in text-sm text-stone-400">Opening conversation…</p>
+      </main>
+    );
+  }
 
   if (turns.length === 0) {
     return (
@@ -128,6 +238,14 @@ export function Chat() {
             </button>
           ))}
         </div>
+        {enabled && !user && (
+          <p className="fade-in mt-10 text-center text-[12px] text-stone-400">
+            <button type="button" onClick={openAuth} className="underline decoration-stone-300 underline-offset-2 hover:text-stone-700">
+              Sign in
+            </button>{" "}
+            to save your conversations and come back to them.
+          </p>
+        )}
       </main>
     );
   }

@@ -65,6 +65,25 @@ export type Job = {
   finished_at: string | null;
 };
 
+export type ConversationSummary = {
+  id: string;
+  title: string | null;
+  language: string | null;
+  message_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StoredMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations: Citation[] | null;
+  abstained: boolean;
+  followups: string[];
+  created_at: string;
+};
+
 export type Page = {
   page_index: number;
   printed_page_number: string | null;
@@ -117,10 +136,13 @@ async function askStream(
   question: string,
   conversation_id: string | null | undefined,
   onEvent: (e: StreamEvent) => void,
+  token?: string | null,
 ): Promise<AskResponse> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "text/event-stream" };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}/ask/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    headers,
     body: JSON.stringify({ question, conversation_id: conversation_id ?? null }),
     cache: "no-store",
   });
@@ -165,12 +187,34 @@ async function askStream(
 }
 
 export const api = {
-  ask: (question: string, conversation_id?: string | null) =>
-    request<AskResponse>("/ask", {
-      method: "POST",
-      body: JSON.stringify({ question, conversation_id: conversation_id ?? null }),
-    }),
+  ask: (question: string, conversation_id?: string | null, token?: string | null) =>
+    request<AskResponse>(
+      "/ask",
+      { method: "POST", body: JSON.stringify({ question, conversation_id: conversation_id ?? null }) },
+      token,
+    ),
   askStream,
+  conversation: (id: string, token?: string | null) =>
+    request<{ id: string; title: string | null; owned: boolean; messages: StoredMessage[] }>(
+      `/conversations/${id}`,
+      {},
+      token,
+    ),
+  me: {
+    conversations: (t: string) => request<ConversationSummary[]>("/me/conversations", {}, t),
+    rename: (t: string, id: string, title: string) =>
+      request<ConversationSummary>(
+        `/me/conversations/${id}`,
+        { method: "PATCH", body: JSON.stringify({ title }) },
+        t,
+      ),
+    remove: (t: string, id: string) => request<void>(`/me/conversations/${id}`, { method: "DELETE" }, t),
+    claim: (t: string, id: string) =>
+      request<void>(`/me/conversations/${id}/claim`, { method: "POST" }, t),
+    removeAll: (t: string) => request<void>("/me/conversations", { method: "DELETE" }, t),
+    deleteAccount: (t: string) =>
+      request<{ history_deleted: boolean; account_deleted: boolean }>("/me", { method: "DELETE" }, t),
+  },
   feedback: (message_id: string, rating: 1 | -1, comment?: string) =>
     request("/feedback", { method: "POST", body: JSON.stringify({ message_id, rating, comment }) }),
   sources: () => request<Source[]>("/sources"),
